@@ -19,6 +19,7 @@ function defaultState(){
     },
     weekPlan: JSON.parse(JSON.stringify(DEFAULT_WEEK_PLAN)),
     templateOverrides:{},      // { templateId: { exercises:[...] } } — treinos personalizados pelo usuário
+    customExercises:[],        // exercícios criados pelo usuário, no mesmo formato de EXERCISE_LIBRARY
     completedDates:{},        // { 'YYYY-MM-DD': workoutTemplateId }
     history:[],                // sessões completas
     goals:[
@@ -92,4 +93,3 @@ function computeStreak(completedDates){
   }
   return streak;
 }
-
