@@ -55,3 +55,4 @@ const RestTimer = (function(){
 
   return {start, stop, isRunning, getRemaining, getTotal};
 })();
+
