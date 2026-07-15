@@ -19,6 +19,7 @@ function defaultState(){
     },
     weekPlan: JSON.parse(JSON.stringify(DEFAULT_WEEK_PLAN)),
     templateOverrides:{},      // { templateId: { exercises:[...] } } — treinos personalizados pelo usuário
+    customTemplates:{},        // { templateId: {...} } — treinos criados do zero (ex: duplicados)
     customExercises:[],        // exercícios criados pelo usuário, no mesmo formato de EXERCISE_LIBRARY
     completedDates:{},        // { 'YYYY-MM-DD': workoutTemplateId }
     history:[],                // sessões completas
@@ -30,6 +31,7 @@ function defaultState(){
     ],
     checkins:{},                // { 'YYYY-MM-DD': moodId }
     weightLog:[],                // [{date, weight}]
+    measurements:[],             // [{date, arm, waist, hips, thigh}] — medidas corporais
     unlockedAchievements:[],
     fullWeeksCompleted:0,
     exerciseLoads:{},            // { exerciseId: [{date, weight, reps, notes}] }
