@@ -407,14 +407,19 @@ function renderAgenda(){
 }
 
 /* ======================================================================
-   EDITOR DE TREINOS — trocar o treino de cada dia e ajustar exercícios
+   EDITOR DE TREINOS — trocar o treino de cada dia, ajustar exercícios,
+   criar exercícios novos e adicionar/remover exercícios de um treino
    ====================================================================== */
 const SCHEDULE_DAY_ORDER = [1,2,3,4,5,6,0]; // Segunda ... Domingo
+
+function allExercises(){
+  return EXERCISE_LIBRARY.concat(state.customExercises||[]);
+}
 
 function renderEditor(){
   const wrap = document.getElementById('viewWrap');
   wrap.innerHTML = `
-    <div class="view-header"><div class="greeting"><h1>Editar Treinos</h1><p>Troque o treino de cada dia ou ajuste séries, repetições e carga.</p></div></div>
+    <div class="view-header"><div class="greeting"><h1>Editar Treinos</h1><p>Troque o treino de cada dia, ajuste exercícios ou crie os seus.</p></div></div>
 
     <div class="section-title">Cronograma da semana</div>
     <div class="card" style="margin-bottom:20px;">
@@ -422,16 +427,38 @@ function renderEditor(){
     </div>
 
     <div class="section-title">Editar exercícios de um treino</div>
-    <div class="card">
+    <div class="card" style="margin-bottom:20px;">
       <div class="field">
         <label>Escolha o treino</label>
         <select id="editorTemplateSelect"></select>
       </div>
       <div id="editorExerciseList"></div>
+      <div class="field-row" style="margin-top:14px;align-items:flex-end;">
+        <div class="field" style="margin-bottom:0;">
+          <label>Adicionar exercício a este treino</label>
+          <select id="addExerciseSelect"></select>
+        </div>
+        <button class="btn btn-ghost" id="addExerciseBtn" style="height:44px;">Adicionar</button>
+      </div>
       <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
         <button class="btn btn-primary" id="saveTemplateBtn">Salvar alterações</button>
         <button class="btn btn-ghost" id="resetTemplateBtn">Restaurar padrão</button>
       </div>
+    </div>
+
+    <div class="section-title">Criar exercício novo</div>
+    <div class="card">
+      <div class="field"><label>Nome</label><input type="text" id="newExName" placeholder="Ex: Stiff com halteres"></div>
+      <div class="field">
+        <label>Grupo muscular</label>
+        <select id="newExMuscle">
+          ${Object.keys(MUSCLE_ICONS).map(m=>`<option value="${m}">${MUSCLE_ICONS[m]} ${capitalize(m)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Descrição</label><input type="text" id="newExDesc" placeholder="Pra que serve esse exercício"></div>
+      <div class="field"><label>Como executar</label><input type="text" id="newExExec" placeholder="Passo a passo da execução"></div>
+      <div class="field"><label>Erros comuns (opcional)</label><input type="text" id="newExMistakes" placeholder="O que evitar"></div>
+      <button class="btn btn-primary btn-block" id="createExerciseBtn">Criar exercício</button>
     </div>
   `;
   renderScheduleRows();
@@ -444,6 +471,11 @@ function renderEditor(){
 
   document.getElementById('saveTemplateBtn').addEventListener('click', ()=>saveTemplateEdits(templateSelect.value));
   document.getElementById('resetTemplateBtn').addEventListener('click', ()=>resetTemplateEdits(templateSelect.value));
+  document.getElementById('addExerciseBtn').addEventListener('click', ()=>{
+    const exId = document.getElementById('addExerciseSelect').value;
+    if(exId) addExerciseToTemplate(templateSelect.value, exId);
+  });
+  document.getElementById('createExerciseBtn').addEventListener('click', createCustomExercise);
 }
 
 function renderScheduleRows(){
@@ -477,7 +509,10 @@ function renderEditorExercises(templateId){
       return `<div class="list-row" style="align-items:flex-start;">
         <div class="list-row-icon">${MUSCLE_ICONS[e?.muscle]||'🏋️'}</div>
         <div class="list-row-body">
-          <div class="list-row-title">${e?e.name:ex.exerciseId}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <div class="list-row-title">${e?e.name:ex.exerciseId}</div>
+            <button class="icon-btn" data-remove-idx="${i}" title="Remover" style="width:32px;height:32px;font-size:14px;flex-shrink:0;">🗑️</button>
+          </div>
           <div class="field-row" style="margin-top:10px;">
             <div class="field" style="margin-bottom:0;"><label>Séries</label><input type="number" min="1" data-idx="${i}" data-key="sets" value="${ex.sets}"></div>
             <div class="field" style="margin-bottom:0;"><label>Repetições</label><input type="number" min="1" data-idx="${i}" data-key="reps" value="${ex.reps}"></div>
@@ -490,6 +525,16 @@ function renderEditorExercises(templateId){
       </div>`;
     }).join('')}
   `;
+  list.querySelectorAll('[data-remove-idx]').forEach(btn=>{
+    btn.addEventListener('click', ()=>removeExerciseFromTemplate(templateId, Number(btn.dataset.removeIdx)));
+  });
+
+  const addSelect = document.getElementById('addExerciseSelect');
+  const inTemplateIds = tpl.exercises.map(ex=>ex.exerciseId);
+  const options = allExercises().filter(e=>!inTemplateIds.includes(e.id));
+  addSelect.innerHTML = options.length
+    ? options.map(e=>`<option value="${e.id}">${MUSCLE_ICONS[e.muscle]||'🏋️'} ${e.name}</option>`).join('')
+    : `<option value="">Todos os exercícios já estão nesse treino</option>`;
 }
 
 function saveTemplateEdits(templateId){
@@ -514,6 +559,49 @@ function resetTemplateEdits(templateId){
   persist();
   showToast('Treino restaurado', `${WORKOUT_TEMPLATES[templateId].name} voltou ao padrão original.`, '↩️');
   renderEditorExercises(templateId);
+}
+
+function addExerciseToTemplate(templateId, exerciseId){
+  const tpl = getTemplate(templateId);
+  const newExercises = tpl.exercises.concat([{exerciseId, sets:3, reps:10, load:0, rest:60}]);
+  state.templateOverrides = state.templateOverrides || {};
+  state.templateOverrides[templateId] = {exercises:newExercises};
+  persist();
+  const e = findExercise(exerciseId);
+  showToast('Exercício adicionado', `${e?e.name:exerciseId} foi adicionado ao treino.`, '➕');
+  renderEditorExercises(templateId);
+}
+
+function removeExerciseFromTemplate(templateId, idx){
+  const tpl = getTemplate(templateId);
+  const newExercises = tpl.exercises.filter((_,i)=>i!==idx);
+  state.templateOverrides = state.templateOverrides || {};
+  state.templateOverrides[templateId] = {exercises:newExercises};
+  persist();
+  showToast('Exercício removido', 'O exercício foi removido do treino.', '🗑️');
+  renderEditorExercises(templateId);
+}
+
+function createCustomExercise(){
+  const name = document.getElementById('newExName').value.trim();
+  if(!name){ showToast('Falta o nome', 'Escreva um nome pro exercício antes de criar.', '⚠️'); return; }
+  const ex = {
+    id: 'ex_custom_'+cryptoId(),
+    name,
+    muscle: document.getElementById('newExMuscle').value,
+    desc: document.getElementById('newExDesc').value.trim(),
+    execution: document.getElementById('newExExec').value.trim(),
+    mistakes: document.getElementById('newExMistakes').value.trim(),
+  };
+  state.customExercises = state.customExercises || [];
+  state.customExercises.push(ex);
+  persist();
+  showToast('Exercício criado', `${ex.name} já está disponível pra adicionar em qualquer treino.`, '🆕');
+  document.getElementById('newExName').value='';
+  document.getElementById('newExDesc').value='';
+  document.getElementById('newExExec').value='';
+  document.getElementById('newExMistakes').value='';
+  renderEditorExercises(document.getElementById('editorTemplateSelect').value);
 }
 
 function openWorkoutDetail(templateId, dateKey){
@@ -832,7 +920,7 @@ function renderExercises(){
 
 function renderExGrid(){
   const grid = document.getElementById('exGrid');
-  const filtered = EXERCISE_LIBRARY.filter(e=>
+  const filtered = allExercises().filter(e=>
     (exerciseFilter==='todos'||e.muscle===exerciseFilter) &&
     e.name.toLowerCase().includes(exerciseSearch.toLowerCase())
   );
