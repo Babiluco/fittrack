@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>FitTrack — Treinos Personalizados</title>
 <meta name="description" content="Organize seus treinos, acompanhe seu progresso e siga seu cronograma semanal.">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0A0A0E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FitTrack">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
@@ -578,6 +586,7 @@ function defaultState(){
     },
     weekPlan: JSON.parse(JSON.stringify(DEFAULT_WEEK_PLAN)),
     templateOverrides:{},      // { templateId: { exercises:[...] } } — treinos personalizados pelo usuário
+    customTemplates:{},        // { templateId: {...} } — treinos criados do zero (ex: duplicados)
     customExercises:[],        // exercícios criados pelo usuário, no mesmo formato de EXERCISE_LIBRARY
     completedDates:{},        // { 'YYYY-MM-DD': workoutTemplateId }
     history:[],                // sessões completas
@@ -589,6 +598,7 @@ function defaultState(){
     ],
     checkins:{},                // { 'YYYY-MM-DD': moodId }
     weightLog:[],                // [{date, weight}]
+    measurements:[],             // [{date, arm, waist, hips, thigh}] — medidas corporais
     unlockedAchievements:[],
     fullWeeksCompleted:0,
     exerciseLoads:{},            // { exerciseId: [{date, weight, reps, notes}] }
@@ -1137,11 +1147,24 @@ function persist(){ saveState(state); }
 /* por cima dos templates padrão (data.js nunca é alterado em si)      */
 /* -------------------------------------------------------------------- */
 function getTemplate(id){
+  if(state.customTemplates && state.customTemplates[id]) return state.customTemplates[id];
   const base = WORKOUT_TEMPLATES[id];
   if(!base) return base;
   const override = state.templateOverrides && state.templateOverrides[id];
   if(!override) return base;
   return Object.assign({}, base, override.exercises ? {exercises: override.exercises} : {});
+}
+
+function isCustomTemplate(id){
+  return !!(state.customTemplates && state.customTemplates[id]);
+}
+
+/* Todos os treinos disponíveis: fixos (data.js) + criados pelo usuário.
+   includeRest=true também inclui a opção "Descanso" (usada no cronograma). */
+function allTemplateIds(includeRest){
+  const builtins = Object.keys(WORKOUT_TEMPLATES).filter(id=>includeRest || id!=='descanso');
+  const custom = Object.keys(state.customTemplates||{});
+  return builtins.concat(custom);
 }
 
 /* -------------------------------------------------------------------- */
@@ -1551,6 +1574,11 @@ function renderEditor(){
         <label>Escolha o treino</label>
         <select id="editorTemplateSelect"></select>
       </div>
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="duplicateTemplateBtn">📄 Duplicar este treino</button>
+        <button class="btn btn-ghost" id="renameTemplateBtn" style="display:none;">✏️ Renomear</button>
+        <button class="btn btn-ghost" id="deleteTemplateBtn" style="display:none;color:var(--red);">🗑️ Excluir treino</button>
+      </div>
       <div id="editorExerciseList"></div>
       <div class="field-row" style="margin-top:14px;align-items:flex-end;">
         <div class="field" style="margin-bottom:0;">
@@ -1582,9 +1610,7 @@ function renderEditor(){
   `;
   renderScheduleRows();
   const templateSelect = document.getElementById('editorTemplateSelect');
-  templateSelect.innerHTML = Object.keys(WORKOUT_TEMPLATES)
-    .filter(id=>id!=='descanso')
-    .map(id=>`<option value="${id}">${WORKOUT_TEMPLATES[id].name}</option>`).join('');
+  populateTemplateSelect(templateSelect);
   templateSelect.addEventListener('change', ()=>renderEditorExercises(templateSelect.value));
   renderEditorExercises(templateSelect.value);
 
@@ -1595,15 +1621,24 @@ function renderEditor(){
     if(exId) addExerciseToTemplate(templateSelect.value, exId);
   });
   document.getElementById('createExerciseBtn').addEventListener('click', createCustomExercise);
+  document.getElementById('duplicateTemplateBtn').addEventListener('click', ()=>duplicateTemplate(templateSelect.value));
+  document.getElementById('renameTemplateBtn').addEventListener('click', ()=>renameCustomTemplate(templateSelect.value));
+  document.getElementById('deleteTemplateBtn').addEventListener('click', ()=>deleteCustomTemplate(templateSelect.value));
+}
+
+function populateTemplateSelect(selectEl, keepValue){
+  const ids = allTemplateIds(false);
+  selectEl.innerHTML = ids.map(id=>`<option value="${id}" ${id===keepValue?'selected':''}>${getTemplate(id).name}</option>`).join('');
 }
 
 function renderScheduleRows(){
   const rows = document.getElementById('scheduleRows');
+  const ids = allTemplateIds(true);
   rows.innerHTML = SCHEDULE_DAY_ORDER.map(day=>`
     <div class="field" style="margin-bottom:12px;">
       <label>${WEEKDAY_NAMES[day]}</label>
       <select data-schedday="${day}">
-        ${Object.keys(WORKOUT_TEMPLATES).map(id=>`<option value="${id}" ${state.weekPlan[day]===id?'selected':''}>${WORKOUT_TEMPLATES[id].name}</option>`).join('')}
+        ${ids.map(id=>`<option value="${id}" ${state.weekPlan[day]===id?'selected':''}>${getTemplate(id).name}</option>`).join('')}
       </select>
     </div>
   `).join('');
@@ -1611,7 +1646,7 @@ function renderScheduleRows(){
     sel.addEventListener('change', ()=>{
       state.weekPlan[Number(sel.dataset.schedday)] = sel.value;
       persist();
-      showToast('Cronograma atualizado', `${WEEKDAY_NAMES[Number(sel.dataset.schedday)]} agora é ${WORKOUT_TEMPLATES[sel.value].name}.`, '📅');
+      showToast('Cronograma atualizado', `${WEEKDAY_NAMES[Number(sel.dataset.schedday)]} agora é ${getTemplate(sel.value).name}.`, '📅');
     });
   });
 }
@@ -1620,8 +1655,13 @@ function renderEditorExercises(templateId){
   const list = document.getElementById('editorExerciseList');
   const tpl = getTemplate(templateId);
   if(!tpl){ list.innerHTML=''; return; }
-  const hasOverride = !!(state.templateOverrides && state.templateOverrides[templateId]);
+  const custom = isCustomTemplate(templateId);
+  const hasOverride = !custom && !!(state.templateOverrides && state.templateOverrides[templateId]);
+  document.getElementById('renameTemplateBtn').style.display = custom ? '' : 'none';
+  document.getElementById('deleteTemplateBtn').style.display = custom ? '' : 'none';
+  document.getElementById('resetTemplateBtn').style.display = custom ? 'none' : '';
   list.innerHTML = `
+    ${custom?'<div class="chip active" style="margin:14px 0 4px;">📄 Treino próprio</div>':''}
     ${hasOverride?'<div class="chip active" style="margin:14px 0 4px;">✏️ Personalizado</div>':''}
     ${tpl.exercises.map((ex,i)=>{
       const e = findExercise(ex.exerciseId);
@@ -1656,6 +1696,19 @@ function renderEditorExercises(templateId){
     : `<option value="">Todos os exercícios já estão nesse treino</option>`;
 }
 
+/* Salva a lista de exercícios de um treino no lugar certo: se for um
+   treino criado pelo usuário, edita ele diretamente; se for um treino
+   fixo, salva como override por cima do padrão. */
+function persistTemplateExercises(templateId, exercises){
+  if(isCustomTemplate(templateId)){
+    state.customTemplates[templateId] = Object.assign({}, state.customTemplates[templateId], {exercises});
+  } else {
+    state.templateOverrides = state.templateOverrides || {};
+    state.templateOverrides[templateId] = {exercises};
+  }
+  persist();
+}
+
 function saveTemplateEdits(templateId){
   const base = getTemplate(templateId);
   if(!base) return;
@@ -1666,14 +1719,13 @@ function saveTemplateEdits(templateId){
     const rest = Number(document.querySelector(`[data-idx="${i}"][data-key="rest"]`).value);
     return Object.assign({}, ex, {sets, reps, load:isNaN(load)?ex.load:load, rest:isNaN(rest)?ex.rest:rest});
   });
-  state.templateOverrides = state.templateOverrides || {};
-  state.templateOverrides[templateId] = {exercises:newExercises};
-  persist();
-  showToast('Treino atualizado', `${WORKOUT_TEMPLATES[templateId].name} foi salvo com suas alterações.`, '✅');
+  persistTemplateExercises(templateId, newExercises);
+  showToast('Treino atualizado', `${getTemplate(templateId).name} foi salvo com suas alterações.`, '✅');
   renderEditorExercises(templateId);
 }
 
 function resetTemplateEdits(templateId){
+  if(isCustomTemplate(templateId)) return; // não se aplica a treinos próprios
   if(state.templateOverrides){ delete state.templateOverrides[templateId]; }
   persist();
   showToast('Treino restaurado', `${WORKOUT_TEMPLATES[templateId].name} voltou ao padrão original.`, '↩️');
@@ -1683,9 +1735,7 @@ function resetTemplateEdits(templateId){
 function addExerciseToTemplate(templateId, exerciseId){
   const tpl = getTemplate(templateId);
   const newExercises = tpl.exercises.concat([{exerciseId, sets:3, reps:10, load:0, rest:60}]);
-  state.templateOverrides = state.templateOverrides || {};
-  state.templateOverrides[templateId] = {exercises:newExercises};
-  persist();
+  persistTemplateExercises(templateId, newExercises);
   const e = findExercise(exerciseId);
   showToast('Exercício adicionado', `${e?e.name:exerciseId} foi adicionado ao treino.`, '➕');
   renderEditorExercises(templateId);
@@ -1694,11 +1744,79 @@ function addExerciseToTemplate(templateId, exerciseId){
 function removeExerciseFromTemplate(templateId, idx){
   const tpl = getTemplate(templateId);
   const newExercises = tpl.exercises.filter((_,i)=>i!==idx);
-  state.templateOverrides = state.templateOverrides || {};
-  state.templateOverrides[templateId] = {exercises:newExercises};
-  persist();
+  persistTemplateExercises(templateId, newExercises);
   showToast('Exercício removido', 'O exercício foi removido do treino.', '🗑️');
   renderEditorExercises(templateId);
+}
+
+function duplicateTemplate(sourceId){
+  const src = getTemplate(sourceId);
+  if(!src) return;
+  const newId = 'custom_'+cryptoId();
+  state.customTemplates = state.customTemplates || {};
+  state.customTemplates[newId] = {
+    id: newId,
+    name: src.name + ' (cópia)',
+    muscle: src.muscle,
+    description: src.description,
+    estimatedTime: src.estimatedTime,
+    exercises: JSON.parse(JSON.stringify(src.exercises)),
+  };
+  persist();
+  showToast('Treino duplicado', `"${state.customTemplates[newId].name}" já pode ser editado à vontade.`, '📄');
+  const templateSelect = document.getElementById('editorTemplateSelect');
+  populateTemplateSelect(templateSelect, newId);
+  renderScheduleRows();
+  renderEditorExercises(newId);
+}
+
+function renameCustomTemplate(templateId){
+  if(!isCustomTemplate(templateId)) return;
+  const current = state.customTemplates[templateId].name;
+  openModal(`
+    <h2 style="margin-bottom:16px;">Renomear treino</h2>
+    <div class="field"><label>Nome</label><input type="text" id="renameInput" value="${escapeHtml(current)}" autofocus></div>
+    <button class="btn btn-primary btn-block" id="renameSaveBtn">Salvar</button>
+  `);
+  document.getElementById('renameSaveBtn').addEventListener('click', ()=>{
+    const newName = document.getElementById('renameInput').value.trim();
+    if(!newName) return;
+    state.customTemplates[templateId].name = newName;
+    persist();
+    closeModal();
+    showToast('Treino renomeado', `Agora chamado de "${newName}".`, '✏️');
+    const templateSelect = document.getElementById('editorTemplateSelect');
+    populateTemplateSelect(templateSelect, templateId);
+    renderScheduleRows();
+    renderEditorExercises(templateId);
+  });
+}
+
+function deleteCustomTemplate(templateId){
+  if(!isCustomTemplate(templateId)) return;
+  const name = state.customTemplates[templateId].name;
+  openModal(`
+    <h2 style="margin-bottom:8px;">Excluir "${escapeHtml(name)}"?</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:18px;">Se esse treino estiver em algum dia do cronograma, o dia vira Descanso. Essa ação não pode ser desfeita.</p>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-ghost" id="cancelDeleteBtn" style="flex:1;">Cancelar</button>
+      <button class="btn btn-danger" id="confirmDeleteBtn" style="flex:1;">Excluir</button>
+    </div>
+  `);
+  document.getElementById('cancelDeleteBtn').addEventListener('click', closeModal);
+  document.getElementById('confirmDeleteBtn').addEventListener('click', ()=>{
+    delete state.customTemplates[templateId];
+    Object.keys(state.weekPlan).forEach(day=>{
+      if(state.weekPlan[day]===templateId) state.weekPlan[day]='descanso';
+    });
+    persist();
+    closeModal();
+    showToast('Treino excluído', `"${name}" foi removido.`, '🗑️');
+    const templateSelect = document.getElementById('editorTemplateSelect');
+    populateTemplateSelect(templateSelect);
+    renderScheduleRows();
+    renderEditorExercises(templateSelect.value);
+  });
 }
 
 function createCustomExercise(){
@@ -2145,7 +2263,12 @@ function openSessionDetail(id){
 function renderStats(){
   const wrap = document.getElementById('viewWrap');
   wrap.innerHTML = `
-    <div class="view-header"><div class="greeting"><h1>Estatísticas</h1><p>Sua evolução em números.</p></div></div>
+    <div class="view-header">
+      <div class="greeting"><h1>Estatísticas</h1><p>Sua evolução em números.</p></div>
+      <div class="header-actions">
+        <button class="btn btn-primary" id="quickWeightBtn">⚖️ Registrar peso</button>
+      </div>
+    </div>
     <div class="grid grid-4" style="margin-bottom:10px;">
       <div class="card stat-card"><span class="stat-label">Streak atual</span><span class="stat-value">🔥 ${computeStreak(state.completedDates)}</span></div>
       <div class="card stat-card"><span class="stat-label">Total treinado</span><span class="stat-value">${state.history.length}</span><span class="stat-sub">treinos</span></div>
@@ -2159,12 +2282,88 @@ function renderStats(){
     <div class="section-title">Peso corporal</div>
     <div class="card" id="chartWeight"></div>
 
+    <div class="section-title">Medidas corporais</div>
+    <div class="card" id="measurementsCard"></div>
+
     <div class="section-title">Carga levantada (últimas sessões)</div>
     <div class="card" id="chartVolume"></div>
   `;
   renderBarChart(document.getElementById('chartWorkoutsWeek'), workoutsPerWeekData());
   renderLineChart(document.getElementById('chartWeight'), weightSeriesData());
   renderBarChart(document.getElementById('chartVolume'), volumeSeriesData());
+  renderMeasurementsCard();
+  document.getElementById('quickWeightBtn').addEventListener('click', openQuickWeightModal);
+}
+
+function openQuickWeightModal(){
+  openModal(`
+    <h2 style="margin-bottom:4px;">Registrar peso</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">Peso atual: ${state.user.weight}kg</p>
+    <div class="field"><label>Novo peso (kg)</label><input type="number" step="0.1" id="quickWeightInput" value="${state.user.weight}" autofocus></div>
+    <button class="btn btn-primary btn-block" id="quickWeightSave">Salvar</button>
+  `);
+  document.getElementById('quickWeightSave').addEventListener('click', ()=>{
+    const w = Number(document.getElementById('quickWeightInput').value);
+    if(!w || w<=0){ showToast('Peso inválido', 'Informe um valor de peso válido.', '⚠️'); return; }
+    state.weightLog.push({date:todayKey(), weight:w});
+    state.user.weight = w;
+    persist();
+    closeModal();
+    showToast('Peso registrado', `${w}kg salvo no seu histórico.`, '⚖️');
+    renderStats();
+  });
+}
+
+function renderMeasurementsCard(){
+  const card = document.getElementById('measurementsCard');
+  const log = [...(state.measurements||[])].sort((a,b)=>b.date.localeCompare(a.date));
+  card.innerHTML = `
+    <div class="field-row" style="align-items:flex-end;margin-bottom:14px;">
+      <div class="field" style="margin-bottom:0;"><label>Braço (cm)</label><input type="number" step="0.5" id="mArm"></div>
+      <div class="field" style="margin-bottom:0;"><label>Cintura (cm)</label><input type="number" step="0.5" id="mWaist"></div>
+    </div>
+    <div class="field-row" style="align-items:flex-end;margin-bottom:14px;">
+      <div class="field" style="margin-bottom:0;"><label>Quadril (cm)</label><input type="number" step="0.5" id="mHips"></div>
+      <div class="field" style="margin-bottom:0;"><label>Coxa (cm)</label><input type="number" step="0.5" id="mThigh"></div>
+    </div>
+    <button class="btn btn-ghost btn-block" id="mSaveBtn">Registrar medidas de hoje</button>
+    ${log.length===0?'':`
+      <div class="section-title" style="margin-top:18px;">Histórico</div>
+      <div>
+        ${log.slice(0,8).map(m=>`
+          <div class="list-row">
+            <div class="list-row-body">
+              <div class="list-row-title">${fmtDate(m.date)}</div>
+              <div class="list-row-sub">${[
+                m.arm?`Braço ${m.arm}cm`:null,
+                m.waist?`Cintura ${m.waist}cm`:null,
+                m.hips?`Quadril ${m.hips}cm`:null,
+                m.thigh?`Coxa ${m.thigh}cm`:null,
+              ].filter(Boolean).join(' · ')}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `}
+  `;
+  document.getElementById('mSaveBtn').addEventListener('click', ()=>{
+    const entry = {
+      date: todayKey(),
+      arm: Number(document.getElementById('mArm').value)||null,
+      waist: Number(document.getElementById('mWaist').value)||null,
+      hips: Number(document.getElementById('mHips').value)||null,
+      thigh: Number(document.getElementById('mThigh').value)||null,
+    };
+    if(!entry.arm && !entry.waist && !entry.hips && !entry.thigh){
+      showToast('Nada pra salvar', 'Preencha ao menos uma medida.', '⚠️');
+      return;
+    }
+    state.measurements = state.measurements || [];
+    state.measurements.push(entry);
+    persist();
+    showToast('Medidas registradas', 'Seu histórico foi atualizado.', '📏');
+    renderMeasurementsCard();
+  });
 }
 
 function weeklyVolume(){
