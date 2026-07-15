@@ -14,6 +14,18 @@ let runnerCtx = null; // contexto ativo do treino em execução
 function persist(){ saveState(state); }
 
 /* -------------------------------------------------------------------- */
+/* Treinos personalizados: mescla os overrides salvos pelo usuário      */
+/* por cima dos templates padrão (data.js nunca é alterado em si)      */
+/* -------------------------------------------------------------------- */
+function getTemplate(id){
+  const base = WORKOUT_TEMPLATES[id];
+  if(!base) return base;
+  const override = state.templateOverrides && state.templateOverrides[id];
+  if(!override) return base;
+  return Object.assign({}, base, override.exercises ? {exercises: override.exercises} : {});
+}
+
+/* -------------------------------------------------------------------- */
 /* Boot                                                                  */
 /* -------------------------------------------------------------------- */
 function boot(){
@@ -37,6 +49,7 @@ function applyTheme(){
 const NAV_ITEMS = [
   {id:'dashboard', label:'Início', icon:'🏠'},
   {id:'agenda', label:'Agenda', icon:'📅'},
+  {id:'editor', label:'Editar Treinos', icon:'✏️'},
   {id:'exercises', label:'Exercícios', icon:'📚'},
   {id:'history', label:'Histórico', icon:'🕓'},
   {id:'stats', label:'Estatísticas', icon:'📊'},
@@ -95,6 +108,7 @@ function navigate(view){
   const renderers = {
     dashboard: renderDashboard,
     agenda: renderAgenda,
+    editor: renderEditor,
     exercises: renderExercises,
     history: renderHistory,
     stats: renderStats,
@@ -125,7 +139,7 @@ function pushNotification(title, message, emoji){
 
 function maybeGenerateNotifications(){
   const todayPlanId = state.weekPlan[new Date().getDay()];
-  const template = WORKOUT_TEMPLATES[todayPlanId];
+  const template = getTemplate(todayPlanId);
   if(template && template.id!=='descanso' && !state.completedDates[todayKey()]){
     showToast('Hora do treino!', `Hoje é dia de ${template.name}. Vamos lá?`, '⏰');
   }
@@ -161,7 +175,7 @@ function launchConfetti(){
 /* Helpers de dados                                                     */
 /* -------------------------------------------------------------------- */
 function weekProgress(){
-  const days = Object.keys(state.weekPlan).filter(d=>WORKOUT_TEMPLATES[state.weekPlan[d]].id!=='descanso');
+  const days = Object.keys(state.weekPlan).filter(d=>getTemplate(state.weekPlan[d]).id!=='descanso');
   const total = days.length;
   const start = startOfWeek(new Date());
   let done = 0;
@@ -169,7 +183,7 @@ function weekProgress(){
     const d = new Date(start); d.setDate(start.getDate()+i);
     const key = todayKey(d);
     const planId = state.weekPlan[d.getDay()];
-    if(WORKOUT_TEMPLATES[planId] && WORKOUT_TEMPLATES[planId].id!=='descanso' && state.completedDates[key]) done++;
+    if(getTemplate(planId) && getTemplate(planId).id!=='descanso' && state.completedDates[key]) done++;
   }
   return {done, total};
 }
@@ -187,7 +201,7 @@ function nextWorkout(){
   for(let i=0;i<7;i++){
     const check = new Date(d); check.setDate(d.getDate()+i);
     const planId = state.weekPlan[check.getDay()];
-    const tpl = WORKOUT_TEMPLATES[planId];
+    const tpl = getTemplate(planId);
     if(tpl && tpl.id!=='descanso' && !state.completedDates[todayKey(check)]){
       return {template:tpl, date:check, isToday:i===0};
     }
@@ -305,7 +319,7 @@ function renderMiniWeek(){
     const d = new Date(start); d.setDate(start.getDate()+i);
     const key = todayKey(d);
     const planId = state.weekPlan[d.getDay()];
-    const tpl = WORKOUT_TEMPLATES[planId];
+    const tpl = getTemplate(planId);
     const isToday = key===todayKey();
     const done = !!state.completedDates[key];
     const isRest = tpl.id==='descanso';
@@ -360,7 +374,7 @@ function renderAgenda(){
     const d = new Date(start); d.setDate(start.getDate()+i);
     const key = todayKey(d);
     const planId = state.weekPlan[d.getDay()];
-    const tpl = WORKOUT_TEMPLATES[planId];
+    const tpl = getTemplate(planId);
     const isToday = key===todayKey();
     const done = !!state.completedDates[key];
     const isRest = tpl.id==='descanso';
@@ -384,7 +398,7 @@ function renderAgenda(){
     elm.addEventListener('click', ()=>{
       const day = elm.dataset.day || elm.dataset.daydetail;
       const planId = state.weekPlan[day];
-      const tpl = WORKOUT_TEMPLATES[planId];
+      const tpl = getTemplate(planId);
       if(tpl.id==='descanso') return;
       const d = new Date(start); d.setDate(start.getDate() + ((Number(day)-start.getDay()+7)%7));
       openWorkoutDetail(tpl.id, todayKey(d));
@@ -392,8 +406,118 @@ function renderAgenda(){
   });
 }
 
+/* ======================================================================
+   EDITOR DE TREINOS — trocar o treino de cada dia e ajustar exercícios
+   ====================================================================== */
+const SCHEDULE_DAY_ORDER = [1,2,3,4,5,6,0]; // Segunda ... Domingo
+
+function renderEditor(){
+  const wrap = document.getElementById('viewWrap');
+  wrap.innerHTML = `
+    <div class="view-header"><div class="greeting"><h1>Editar Treinos</h1><p>Troque o treino de cada dia ou ajuste séries, repetições e carga.</p></div></div>
+
+    <div class="section-title">Cronograma da semana</div>
+    <div class="card" style="margin-bottom:20px;">
+      <div id="scheduleRows"></div>
+    </div>
+
+    <div class="section-title">Editar exercícios de um treino</div>
+    <div class="card">
+      <div class="field">
+        <label>Escolha o treino</label>
+        <select id="editorTemplateSelect"></select>
+      </div>
+      <div id="editorExerciseList"></div>
+      <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="saveTemplateBtn">Salvar alterações</button>
+        <button class="btn btn-ghost" id="resetTemplateBtn">Restaurar padrão</button>
+      </div>
+    </div>
+  `;
+  renderScheduleRows();
+  const templateSelect = document.getElementById('editorTemplateSelect');
+  templateSelect.innerHTML = Object.keys(WORKOUT_TEMPLATES)
+    .filter(id=>id!=='descanso')
+    .map(id=>`<option value="${id}">${WORKOUT_TEMPLATES[id].name}</option>`).join('');
+  templateSelect.addEventListener('change', ()=>renderEditorExercises(templateSelect.value));
+  renderEditorExercises(templateSelect.value);
+
+  document.getElementById('saveTemplateBtn').addEventListener('click', ()=>saveTemplateEdits(templateSelect.value));
+  document.getElementById('resetTemplateBtn').addEventListener('click', ()=>resetTemplateEdits(templateSelect.value));
+}
+
+function renderScheduleRows(){
+  const rows = document.getElementById('scheduleRows');
+  rows.innerHTML = SCHEDULE_DAY_ORDER.map(day=>`
+    <div class="field" style="margin-bottom:12px;">
+      <label>${WEEKDAY_NAMES[day]}</label>
+      <select data-schedday="${day}">
+        ${Object.keys(WORKOUT_TEMPLATES).map(id=>`<option value="${id}" ${state.weekPlan[day]===id?'selected':''}>${WORKOUT_TEMPLATES[id].name}</option>`).join('')}
+      </select>
+    </div>
+  `).join('');
+  rows.querySelectorAll('[data-schedday]').forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      state.weekPlan[Number(sel.dataset.schedday)] = sel.value;
+      persist();
+      showToast('Cronograma atualizado', `${WEEKDAY_NAMES[Number(sel.dataset.schedday)]} agora é ${WORKOUT_TEMPLATES[sel.value].name}.`, '📅');
+    });
+  });
+}
+
+function renderEditorExercises(templateId){
+  const list = document.getElementById('editorExerciseList');
+  const tpl = getTemplate(templateId);
+  if(!tpl){ list.innerHTML=''; return; }
+  const hasOverride = !!(state.templateOverrides && state.templateOverrides[templateId]);
+  list.innerHTML = `
+    ${hasOverride?'<div class="chip active" style="margin:14px 0 4px;">✏️ Personalizado</div>':''}
+    ${tpl.exercises.map((ex,i)=>{
+      const e = findExercise(ex.exerciseId);
+      return `<div class="list-row" style="align-items:flex-start;">
+        <div class="list-row-icon">${MUSCLE_ICONS[e?.muscle]||'🏋️'}</div>
+        <div class="list-row-body">
+          <div class="list-row-title">${e?e.name:ex.exerciseId}</div>
+          <div class="field-row" style="margin-top:10px;">
+            <div class="field" style="margin-bottom:0;"><label>Séries</label><input type="number" min="1" data-idx="${i}" data-key="sets" value="${ex.sets}"></div>
+            <div class="field" style="margin-bottom:0;"><label>Repetições</label><input type="number" min="1" data-idx="${i}" data-key="reps" value="${ex.reps}"></div>
+          </div>
+          <div class="field-row" style="margin-top:10px;">
+            <div class="field" style="margin-bottom:0;"><label>Carga (kg)</label><input type="number" min="0" step="0.5" data-idx="${i}" data-key="load" value="${ex.load}"></div>
+            <div class="field" style="margin-bottom:0;"><label>Descanso (seg)</label><input type="number" min="0" data-idx="${i}" data-key="rest" value="${ex.rest}"></div>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  `;
+}
+
+function saveTemplateEdits(templateId){
+  const base = getTemplate(templateId);
+  if(!base) return;
+  const newExercises = base.exercises.map((ex,i)=>{
+    const sets = Number(document.querySelector(`[data-idx="${i}"][data-key="sets"]`).value)||ex.sets;
+    const reps = Number(document.querySelector(`[data-idx="${i}"][data-key="reps"]`).value)||ex.reps;
+    const load = Number(document.querySelector(`[data-idx="${i}"][data-key="load"]`).value);
+    const rest = Number(document.querySelector(`[data-idx="${i}"][data-key="rest"]`).value);
+    return Object.assign({}, ex, {sets, reps, load:isNaN(load)?ex.load:load, rest:isNaN(rest)?ex.rest:rest});
+  });
+  state.templateOverrides = state.templateOverrides || {};
+  state.templateOverrides[templateId] = {exercises:newExercises};
+  persist();
+  showToast('Treino atualizado', `${WORKOUT_TEMPLATES[templateId].name} foi salvo com suas alterações.`, '✅');
+  renderEditorExercises(templateId);
+}
+
+function resetTemplateEdits(templateId){
+  if(state.templateOverrides){ delete state.templateOverrides[templateId]; }
+  persist();
+  showToast('Treino restaurado', `${WORKOUT_TEMPLATES[templateId].name} voltou ao padrão original.`, '↩️');
+  renderEditorExercises(templateId);
+}
+
 function openWorkoutDetail(templateId, dateKey){
-  const tpl = WORKOUT_TEMPLATES[templateId];
+  const tpl = getTemplate(templateId);
   const done = !!state.completedDates[dateKey];
   openModal(`
     <h2 style="margin-bottom:4px;">${tpl.name}</h2>
@@ -457,7 +581,7 @@ function startCheckinFlow(templateId, dateKey){
    WORKOUT RUNNER (execução do treino)
    ====================================================================== */
 function openRunner(templateId, dateKey, mood){
-  const tpl = WORKOUT_TEMPLATES[templateId];
+  const tpl = getTemplate(templateId);
   const loadMultiplier = (mood==='tired')?0.9:(mood==='exhausted')?0.8:1;
   runnerCtx = {
     templateId, dateKey, mood,
@@ -491,7 +615,7 @@ function closeRunner(){
 function renderRunnerExercise(){
   const runnerEl = document.getElementById('runnerEl');
   if(!runnerEl || !runnerCtx) return;
-  const tpl = WORKOUT_TEMPLATES[runnerCtx.templateId];
+  const tpl = getTemplate(runnerCtx.templateId);
   const exDef = tpl.exercises[runnerCtx.exIndex];
   const e = findExercise(exDef.exerciseId);
   const setsArr = runnerCtx.sets[runnerCtx.exIndex];
@@ -561,7 +685,7 @@ function renderRunnerExercise(){
 }
 
 function goToNextExercise(){
-  const tpl = WORKOUT_TEMPLATES[runnerCtx.templateId];
+  const tpl = getTemplate(runnerCtx.templateId);
   if(runnerCtx.exIndex < tpl.exercises.length-1){
     runnerCtx.exIndex++;
     renderRunnerExercise();
@@ -613,7 +737,7 @@ function removeTimerFab(){
 }
 
 function finishWorkout(){
-  const tpl = WORKOUT_TEMPLATES[runnerCtx.templateId];
+  const tpl = getTemplate(runnerCtx.templateId);
   const durationMin = Math.max(1, Math.round((Date.now()-runnerCtx.startTime)/60000));
   let volume = 0;
   const exercisesLog = tpl.exercises.map((exDef,i)=>{
@@ -773,7 +897,7 @@ function renderHistoryList(){
   if(sessions.length===0){ list.innerHTML = `<div class="empty-state"><span class="emoji">🗂️</span>Nenhum treino registrado neste período.</div>`; return; }
   list.innerHTML = sessions.map(s=>`
     <div class="list-row" data-session="${s.id}" style="cursor:pointer;">
-      <div class="list-row-icon">${MUSCLE_ICONS[WORKOUT_TEMPLATES[s.templateId]?.muscle]||'🏋️'}</div>
+      <div class="list-row-icon">${MUSCLE_ICONS[getTemplate(s.templateId)?.muscle]||'🏋️'}</div>
       <div class="list-row-body">
         <div class="list-row-title">${s.name}</div>
         <div class="list-row-sub">${fmtDate(s.date)} · ${s.duration}min · ${s.volume}kg volume · ${s.calories}kcal</div>
