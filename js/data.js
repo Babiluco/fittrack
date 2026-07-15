@@ -157,7 +157,10 @@ const EXERCISE_LIBRARY = [
     mistakes:'Saltar muito alto gastando energia à toa e usar o ombro para girar a corda.'},
 ];
 
-function findExercise(id){ return EXERCISE_LIBRARY.find(e=>e.id===id); }
+function findExercise(id){
+  return EXERCISE_LIBRARY.find(e=>e.id===id) ||
+    (typeof state!=='undefined' && state.customExercises && state.customExercises.find(e=>e.id===id));
+}
 
 // Modelos de treino padrão (usados na agenda semanal)
 // Programa com ênfase estética em glúteos e pernas: 3 estímulos de glúteo,
