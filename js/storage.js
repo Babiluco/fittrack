@@ -18,6 +18,7 @@ function defaultState(){
       theme:'dark',
     },
     weekPlan: JSON.parse(JSON.stringify(DEFAULT_WEEK_PLAN)),
+    templateOverrides:{},      // { templateId: { exercises:[...] } } — treinos personalizados pelo usuário
     completedDates:{},        // { 'YYYY-MM-DD': workoutTemplateId }
     history:[],                // sessões completas
     goals:[
@@ -79,7 +80,7 @@ function computeStreak(completedDates){
   }
   while(true){
     const key = todayKey(d);
-    const wasRestDay = WORKOUT_TEMPLATES[DEFAULT_WEEK_PLAN[d.getDay()]]?.id === 'descanso';
+    const wasRestDay = getTemplate(state.weekPlan[d.getDay()])?.id === 'descanso';
     if(completedDates[key]){
       streak++;
       d.setDate(d.getDate()-1);
@@ -91,3 +92,4 @@ function computeStreak(completedDates){
   }
   return streak;
 }
+
