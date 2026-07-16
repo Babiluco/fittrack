@@ -120,7 +120,7 @@ a{color:inherit;text-decoration:none;}
   color:var(--text-dim);font-weight:600;font-size:14.5px;
   transition:background .25s var(--ease),color .25s var(--ease),transform .15s var(--ease);
 }
-.nav-item .ico{font-size:17px;width:20px;text-align:center;}
+.nav-item .ico{width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .nav-item:hover{background:var(--bg-card-hover);color:var(--text);}
 .nav-item.active{background:var(--accent);color:#fff;}
 .nav-item:active{transform:scale(.97);}
@@ -163,7 +163,7 @@ main.view-wrap{
   padding:7px 8px;text-align:center;white-space:nowrap;border-radius:12px;
 }
 .mobile-nav .nav-item .lbl{white-space:nowrap;}
-.mobile-nav .nav-item .ico{font-size:20px;}
+.mobile-nav .nav-item .ico{width:22px;height:22px;}
 .mobile-nav .nav-item.active{background:var(--accent);}
 
 @media (max-width: 880px){
@@ -347,6 +347,20 @@ main.view-wrap{
 .list-row-body{flex:1;min-width:0;}
 .list-row-title{font-weight:700;font-size:14.5px;}
 .list-row-sub{font-size:12.5px;color:var(--text-dim);margin-top:2px;}
+
+/* Editor de treino: arrastar-e-soltar pra reordenar exercícios */
+.drag-hint{font-size:12px;color:var(--text-faint);margin-bottom:10px;}
+.drag-handle{
+  flex-shrink:0;width:22px;height:44px;display:flex;align-items:center;justify-content:center;
+  color:var(--text-faint);font-size:18px;cursor:grab;touch-action:none;user-select:none;
+  letter-spacing:-2px;line-height:1;
+}
+.drag-handle:active{cursor:grabbing;}
+.draggable-row.dragging{
+  opacity:.9;box-shadow:var(--shadow-lg);border-color:var(--accent);
+  position:relative;z-index:20;
+}
+.add-exercise-row:hover{border-color:var(--accent);background:var(--bg-card-hover);}
 
 /* Exercise card */
 .exercise-card{cursor:pointer;}
