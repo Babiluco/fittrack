@@ -46,10 +46,42 @@ function boot(){
   renderShell();
   navigate('dashboard');
   maybeGenerateNotifications();
+  setupKeyboardAccessibility();
   setTimeout(()=>{
     const loader = document.getElementById('loader');
     if(loader){ loader.style.opacity='0'; setTimeout(()=>loader.remove(),400); }
   }, 500);
+}
+
+/* ======================================================================
+   ACESSIBILIDADE — torna "divs clicáveis" operáveis por teclado
+   ======================================================================
+   O app usa vários cards/linhas com onclick em vez de <button> (cards de
+   dia da agenda, atalhos do Home, resultados de busca de exercício etc).
+   Em vez de reescrever cada tela pra usar <button>, esta função varre o
+   conteúdo recém-renderizado, dá tabindex+role="button" pra esses
+   elementos, e o listener global abaixo faz Enter/Espaço funcionar como
+   clique — chamado uma vez, cobre o app inteiro. */
+const CLICKABLE_DIV_SELECTOR = '[data-nav],[data-day],[data-daydetail],[data-addex],[data-mood],[data-tpl],[data-goal],[data-session],[data-toggle],.theme-toggle,.card.interactive';
+
+function makeInteractiveElementsAccessible(root){
+  (root||document).querySelectorAll(CLICKABLE_DIV_SELECTOR).forEach(el=>{
+    const tag = el.tagName.toLowerCase();
+    if(tag==='button'||tag==='a'||tag==='input'||tag==='select'||tag==='textarea') return;
+    if(!el.hasAttribute('tabindex')) el.setAttribute('tabindex','0');
+    if(!el.hasAttribute('role')) el.setAttribute('role','button');
+  });
+}
+
+function setupKeyboardAccessibility(){
+  document.addEventListener('keydown', (e)=>{
+    if(e.key!=='Enter' && e.key!==' ') return;
+    const el = e.target;
+    if(el && el.getAttribute && el.getAttribute('role')==='button' && el.tagName!=='BUTTON'){
+      e.preventDefault();
+      el.click();
+    }
+  });
 }
 
 function applyTheme(){
@@ -70,7 +102,7 @@ function renderShell(){
   const app = document.getElementById('app');
   app.innerHTML = `
     <aside class="sidebar">
-      <div class="brand"><div class="brand-mark">FT</div><div class="brand-name">FitForAll</div></div>
+      <div class="brand"><img src="icons/icon-192.png" alt="" class="brand-mark"><div class="brand-name">FitForAll</div></div>
       <nav class="nav" id="sidebarNav"></nav>
       <div class="sidebar-footer">
         <div class="theme-toggle" id="themeToggle" role="button">
@@ -353,6 +385,7 @@ function renderDashboard(){
     });
   }
   wrap.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>navigate(el.dataset.nav, el.dataset.navtab)));
+  makeInteractiveElementsAccessible(wrap);
 }
 
 function renderMiniWeek(){
@@ -425,6 +458,7 @@ function renderTreino(){
   });
   const renderers = {agenda: renderAgenda, editor: renderEditor, exercicios: renderExercises};
   renderers[currentTreinoTab]();
+  makeInteractiveElementsAccessible(document.getElementById('treinoTabContent'));
 }
 
 function renderAgenda(){
@@ -1290,6 +1324,7 @@ function renderProgresso(){
   });
   const renderers = {geral: renderStats, historico: renderHistory, conquistas: renderConquistas};
   renderers[currentProgressoTab]();
+  makeInteractiveElementsAccessible(document.getElementById('progressoTabContent'));
 }
 
 function renderHistory(){
@@ -1530,6 +1565,7 @@ function renderProfile(){
     perfil: renderTabPerfil, metas: renderTabMetas, config: renderTabConfig,
   };
   renderers[currentProfileTab]();
+  makeInteractiveElementsAccessible(document.getElementById('profileTabContent'));
 }
 
 function renderTabPerfil(){
@@ -1668,7 +1704,7 @@ function renderTabConfig(){
     const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'FitForAll_backup.json'; a.click();
+    a.href = url; a.download = 'fittrack_backup.json'; a.click();
     URL.revokeObjectURL(url);
     showToast('Exportado', 'Seu backup foi baixado com sucesso.', '⬇️');
   });
@@ -1737,9 +1773,10 @@ function openModal(innerHtml){
     document.body.appendChild(overlay);
     overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
   }
-  overlay.innerHTML = `<div class="modal"><div class="modal-handle"></div><button class="modal-close" id="modalCloseBtn">✕</button><div id="modalBody">${innerHtml}</div></div>`;
+  overlay.innerHTML = `<div class="modal"><div class="modal-handle"></div><button class="modal-close" id="modalCloseBtn" aria-label="Fechar">${icon('x',{size:16})}</button><div id="modalBody">${innerHtml}</div></div>`;
   requestAnimationFrame(()=>overlay.classList.add('open'));
   document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+  makeInteractiveElementsAccessible(overlay);
 }
 function closeModal(){
   const overlay = document.getElementById('modalOverlay');
