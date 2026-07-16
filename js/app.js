@@ -1,5 +1,5 @@
 /* ==========================================================================
-   FitTrack — Aplicação principal
+   FitForAll — Aplicação principal
    Estrutura em "componentes": cada render* monta um pedaço da UI.
    ========================================================================== */
 
@@ -70,7 +70,7 @@ function renderShell(){
   const app = document.getElementById('app');
   app.innerHTML = `
     <aside class="sidebar">
-      <div class="brand"><div class="brand-mark">FT</div><div class="brand-name">FitTrack</div></div>
+      <div class="brand"><div class="brand-mark">FT</div><div class="brand-name">FitForAll</div></div>
       <nav class="nav" id="sidebarNav"></nav>
       <div class="sidebar-footer">
         <div class="theme-toggle" id="themeToggle" role="button">
@@ -1668,7 +1668,7 @@ function renderTabConfig(){
     const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'fittrack_backup.json'; a.click();
+    a.href = url; a.download = 'FitForAll_backup.json'; a.click();
     URL.revokeObjectURL(url);
     showToast('Exportado', 'Seu backup foi baixado com sucesso.', '⬇️');
   });
