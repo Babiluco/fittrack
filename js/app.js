@@ -61,11 +61,8 @@ function applyTheme(){
 /* -------------------------------------------------------------------- */
 const NAV_ITEMS = [
   {id:'dashboard', label:'Início', icon:'🏠'},
-  {id:'agenda', label:'Agenda', icon:'📅'},
-  {id:'editor', label:'Editar Treinos', icon:'✏️'},
-  {id:'exercises', label:'Exercícios', icon:'📚'},
-  {id:'history', label:'Histórico', icon:'🕓'},
-  {id:'stats', label:'Estatísticas', icon:'📊'},
+  {id:'treino', label:'Treino', icon:'🏋'},
+  {id:'progresso', label:'Progresso', icon:'📈'},
   {id:'profile', label:'Perfil', icon:'👤'},
 ];
 
@@ -111,7 +108,24 @@ function toggleTheme(){
     <div class="switch"></div>`;
 }
 
-function navigate(view){
+function navigate(view, subTab){
+  // rotas antigas (de antes da navegação ser reduzida) mapeadas pra dentro
+  // das novas sub-abas — assim nenhum link/atalho existente quebra
+  const legacyMap = {
+    agenda: {view:'treino', tab:'agenda'},
+    editor: {view:'treino', tab:'editor'},
+    exercises: {view:'treino', tab:'exercicios'},
+    history: {view:'progresso', tab:'historico'},
+    stats: {view:'progresso', tab:'geral'},
+  };
+  if(legacyMap[view]){
+    subTab = subTab || legacyMap[view].tab;
+    view = legacyMap[view].view;
+  }
+  if(view==='treino' && subTab) currentTreinoTab = subTab;
+  if(view==='progresso' && subTab) currentProgressoTab = subTab;
+  if(view==='profile' && subTab) currentProfileTab = subTab;
+
   currentView = view;
   renderNavLists();
   const wrap = document.getElementById('viewWrap');
@@ -120,11 +134,8 @@ function navigate(view){
   wrap.classList.add('view-enter');
   const renderers = {
     dashboard: renderDashboard,
-    agenda: renderAgenda,
-    editor: renderEditor,
-    exercises: renderExercises,
-    history: renderHistory,
-    stats: renderStats,
+    treino: renderTreino,
+    progresso: renderProgresso,
     profile: renderProfile,
   };
   (renderers[view]||renderDashboard)();
@@ -250,6 +261,9 @@ function renderDashboard(){
   const nw = nextWorkout();
   const hour = new Date().getHours();
   const greet = hour<12?'Bom dia':hour<18?'Boa tarde':'Boa noite';
+  const lastSession = [...state.history].sort((a,b)=>b.date.localeCompare(a.date))[0];
+  const lastAchievement = [...state.unlockedAchievements].reverse().map(id=>ACHIEVEMENTS.find(a=>a.id===id)).find(Boolean);
+  const nextAchievement = ACHIEVEMENTS.find(a=>!state.unlockedAchievements.includes(a.id));
 
   wrap.innerHTML = `
     <div class="view-header">
@@ -258,53 +272,71 @@ function renderDashboard(){
         <p>Vamos continuar sua evolução hoje.</p>
       </div>
       <div class="header-actions">
-        <button class="icon-btn" id="notifBtn">🔔${state.notifications.some(n=>!n.read)?'<span class="badge-dot"></span>':''}</button>
+        <button class="icon-btn" id="notifBtn" aria-label="Ver notificações">🔔${state.notifications.some(n=>!n.read)?'<span class="badge-dot"></span>':''}</button>
       </div>
     </div>
 
-    <div class="grid grid-3" id="dashStats">
-      <div class="card stat-card">
-        <span class="stat-label">Treinos na semana</span>
-        <span class="stat-value">${wp.done} <span style="font-size:15px;color:var(--text-dim);font-weight:600;">de ${wp.total}</span></span>
-        <div class="progress-track" style="margin-top:6px;"><div class="progress-fill" id="weekBar"></div></div>
-      </div>
-      <div class="card stat-card">
-        <span class="stat-label">Sequência</span>
-        <span class="stat-value streak-badge">🔥 ${streak}</span>
-        <span class="stat-sub">dias seguidos treinando</span>
-      </div>
-      <div class="card stat-card">
-        <span class="stat-label">Peso atual</span>
-        <span class="stat-value">${state.user.weight} <span style="font-size:14px;color:var(--text-dim);">kg</span></span>
-        <span class="stat-sub">IMC ${bmi()}</span>
-      </div>
-    </div>
-
-    <div class="section-title">Próximo treino</div>
-    <div class="card interactive" id="nextWorkoutCard" style="cursor:pointer;">
+    <div class="card hero-card ${nw?'interactive':''}" id="nextWorkoutCard" ${nw?'style="cursor:pointer;"':''}>
       ${nw ? `
+        <div class="hero-eyebrow">${nw.isToday?'Treino de hoje':WEEKDAY_NAMES[nw.date.getDay()]}</div>
         <div style="display:flex;align-items:center;gap:14px;">
-          <div class="list-row-icon" style="width:56px;height:56px;font-size:24px;">${MUSCLE_ICONS[nw.template.muscle]||'🏋️'}</div>
-          <div style="flex:1;">
-            <div style="font-weight:800;font-size:17px;">${nw.template.name}</div>
-            <div style="color:var(--text-dim);font-size:13px;margin-top:2px;">${nw.isToday?'Hoje':WEEKDAY_NAMES[nw.date.getDay()]} · ${nw.template.estimatedTime} min · ${nw.template.exercises.length} exercícios</div>
+          <div class="list-row-icon" style="width:56px;height:56px;font-size:24px;flex-shrink:0;">${MUSCLE_ICONS[nw.template.muscle]||'🏋️'}</div>
+          <div style="min-width:0;">
+            <div style="font-weight:800;font-size:19px;">${nw.template.name}</div>
+            <div class="hero-meta">
+              <span>⏱️ ${nw.template.estimatedTime} min</span>
+              <span>🏋️ ${nw.template.exercises.length} exercícios</span>
+            </div>
           </div>
-          <button class="btn btn-primary" id="continueBtn">Continuar treino</button>
         </div>
-      ` : `<div class="empty-state"><span class="emoji">🎉</span>Você concluiu todos os treinos da semana!</div>`}
+        <button class="btn btn-primary hero-cta" id="continueBtn">Começar treino</button>
+      ` : `<div class="empty-state"><span class="emoji">🎉</span>Você concluiu todos os treinos da semana! Aproveite pra descansar.</div>`}
     </div>
 
-    <div class="section-title">Esta semana <span class="link" data-nav="agenda">ver agenda</span></div>
+    <div class="section-title">Resumo da semana <span class="link" data-nav="agenda">ver agenda</span></div>
     <div id="miniWeek"></div>
 
-    <div class="section-title">Metas de hoje <span class="link" data-nav="profile">ver todas</span></div>
+    <div class="section-title">Objetivos de hoje <span class="link" data-nav="profile" data-navtab="metas">ver todas</span></div>
     <div id="miniGoals"></div>
-  `;
 
-  requestAnimationFrame(()=>{
-    const bar = document.getElementById('weekBar');
-    if(bar) bar.style.width = (wp.total? (wp.done/wp.total*100):0)+'%';
-  });
+    <div class="section-title">Seu progresso <span class="link" data-nav="stats">ver estatísticas</span></div>
+    <div class="progress-strip">
+      <div class="progress-chip"><span class="stat-label">Treinos/semana</span><span class="stat-value">${wp.done}<span style="font-size:13px;color:var(--text-dim);"> /${wp.total}</span></span></div>
+      <div class="progress-chip"><span class="stat-label">Sequência</span><span class="stat-value">🔥 ${streak}</span></div>
+      <div class="progress-chip"><span class="stat-label">Peso atual</span><span class="stat-value">${state.user.weight}<span style="font-size:13px;color:var(--text-dim);">kg</span></span></div>
+      <div class="progress-chip"><span class="stat-label">IMC</span><span class="stat-value">${bmi()}</span></div>
+    </div>
+
+    <div class="section-title">Histórico recente <span class="link" data-nav="history">ver tudo</span></div>
+    ${lastSession ? `
+      <div class="card interactive mini-preview-row" data-nav="history" style="cursor:pointer;">
+        <div class="list-row-icon">${MUSCLE_ICONS[getTemplate(lastSession.templateId)?.muscle]||'🏋️'}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:14px;">${lastSession.name}</div>
+          <div style="color:var(--text-dim);font-size:12.5px;">${fmtDate(lastSession.date)} · ${lastSession.duration} min · ${lastSession.volume}kg de volume</div>
+        </div>
+      </div>
+    ` : `<div class="empty-state"><span class="emoji">📋</span>Seu histórico de treinos aparece aqui.</div>`}
+
+    <div class="section-title">Conquistas <span class="link" data-nav="progresso" data-navtab="conquistas">ver todas</span></div>
+    ${lastAchievement ? `
+      <div class="card interactive mini-preview-row" data-nav="progresso" data-navtab="conquistas" style="cursor:pointer;">
+        <div class="list-row-icon" style="font-size:24px;">${lastAchievement.emoji}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:14px;">${lastAchievement.name}</div>
+          <div style="color:var(--text-dim);font-size:12.5px;">Desbloqueada · ${lastAchievement.desc}</div>
+        </div>
+      </div>
+    ` : nextAchievement ? `
+      <div class="card mini-preview-row" style="opacity:.65;">
+        <div class="list-row-icon" style="font-size:24px;filter:grayscale(1);">${nextAchievement.emoji}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:14px;">${nextAchievement.name}</div>
+          <div style="color:var(--text-dim);font-size:12.5px;">Próxima meta · ${nextAchievement.desc}</div>
+        </div>
+      </div>
+    ` : `<div class="empty-state"><span class="emoji">🏆</span>Suas conquistas aparecem aqui.</div>`}
+  `;
 
   renderMiniWeek();
   renderMiniGoals();
@@ -320,7 +352,7 @@ function renderDashboard(){
       startCheckinFlow(nw.template.id, todayKey(nw.date));
     });
   }
-  wrap.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>navigate(el.dataset.nav)));
+  wrap.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>navigate(el.dataset.nav, el.dataset.navtab)));
 }
 
 function renderMiniWeek(){
@@ -369,13 +401,36 @@ function renderMiniGoals(){
 /* ======================================================================
    VIEW: AGENDA
    ====================================================================== */
-function renderAgenda(){
+/* ======================================================================
+   TREINO — agrupa Agenda, Editar Treinos e Exercícios em sub-abas
+   ====================================================================== */
+let currentTreinoTab = 'agenda';
+
+function renderTreino(){
   const wrap = document.getElementById('viewWrap');
+  const tabs = [
+    {id:'agenda', label:'Agenda'},
+    {id:'editor', label:'Editar Treinos'},
+    {id:'exercicios', label:'Exercícios'},
+  ];
+  wrap.innerHTML = `
+    <div class="view-header"><div class="greeting"><h1>Treino</h1><p>Sua agenda, seus treinos e sua biblioteca de exercícios.</p></div></div>
+    <div class="tabs" id="treinoTabs">
+      ${tabs.map(t=>`<button class="tab-btn ${currentTreinoTab===t.id?'active':''}" data-treinotab="${t.id}">${t.label}</button>`).join('')}
+    </div>
+    <div id="treinoTabContent"></div>
+  `;
+  document.querySelectorAll('[data-treinotab]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ currentTreinoTab=btn.dataset.treinotab; renderTreino(); });
+  });
+  const renderers = {agenda: renderAgenda, editor: renderEditor, exercicios: renderExercises};
+  renderers[currentTreinoTab]();
+}
+
+function renderAgenda(){
+  const wrap = document.getElementById('treinoTabContent');
   const start = startOfWeek(new Date());
   wrap.innerHTML = `
-    <div class="view-header">
-      <div class="greeting"><h1>Agenda Semanal</h1><p>Seu cronograma de treinos da semana.</p></div>
-    </div>
     <div class="week-grid" id="agendaGrid"></div>
     <div class="section-title">Detalhes dos treinos</div>
     <div id="agendaList"></div>
@@ -430,10 +485,8 @@ function allExercises(){
 }
 
 function renderEditor(){
-  const wrap = document.getElementById('viewWrap');
+  const wrap = document.getElementById('treinoTabContent');
   wrap.innerHTML = `
-    <div class="view-header"><div class="greeting"><h1>Editar Treinos</h1><p>Troque o treino de cada dia, ajuste exercícios ou crie os seus.</p></div></div>
-
     <div class="section-title">Cronograma da semana</div>
     <div class="card" style="margin-bottom:20px;">
       <div id="scheduleRows"></div>
@@ -805,6 +858,8 @@ function closeRunner(){
   if(el){ el.classList.remove('open'); setTimeout(()=>{ const root=document.getElementById('runnerRoot'); if(root) root.innerHTML=''; },350); }
   RestTimer.stop();
   removeTimerFab();
+  const overlay = document.getElementById('restOverlay');
+  if(overlay) overlay.remove();
   runnerCtx = null;
 }
 
@@ -829,7 +884,7 @@ function renderRunnerExercise(){
       <div class="progress-track" style="max-width:400px;margin-bottom:20px;"><div class="progress-fill thin" style="width:${((runnerCtx.exIndex)/tpl.exercises.length*100)}%"></div></div>
       <div class="runner-exercise-media">${MUSCLE_ICONS[e.muscle]||'🏋️'}</div>
       <div class="runner-title">${e.name}</div>
-      <div class="runner-muscle">${capitalize(e.muscle)} · ${exDef.sets} séries × ${exDef.reps} reps</div>
+      <div class="runner-muscle">${capitalize(e.muscle)} · ${exDef.sets} séries × ${exDef.reps} reps · ⏱ ${exDef.rest||60}s descanso</div>
       ${last ? `<div class="rest-compare">Semana passada: <b>${last.weight}kg</b> · Hoje sugerido: <b>${exDef.load||0}kg</b></div>` : ''}
 
       <div class="set-tracker" id="setTracker">
@@ -890,40 +945,105 @@ function goToNextExercise(){
   }
 }
 
-function openRestTimerPicker(defaultSeconds, autoStart){
-  removeTimerFab();
-  const fab = document.createElement('div');
-  fab.className = 'timer-fab';
-  fab.id = 'timerFab';
-  document.body.appendChild(fab);
-  const options = [30,60,90,120];
-  function startWith(sec){
-    RestTimer.start(sec, (rem,total)=>{
-      fab.innerHTML = `<div>${Math.max(0,rem)}s</div><div style="font-size:8px;">descanso</div>`;
-    }, ()=>{
-      fab.innerHTML = `✅`;
-      showToast('Descanso finalizado', 'Hora de voltar para a próxima série!', '⏱');
-      setTimeout(removeTimerFab, 2000);
-    });
+function getRestNextLabel(){
+  if(!runnerCtx) return {kind:'none', text:''};
+  const tpl = getTemplate(runnerCtx.templateId);
+  const exDef = tpl.exercises[runnerCtx.exIndex];
+  const setsArr = runnerCtx.sets[runnerCtx.exIndex];
+  const allDone = setsArr.every(s=>s.done);
+  if(!allDone){
+    const e = findExercise(exDef.exerciseId);
+    return {kind:'set', text:`Próxima série · ${e?e.name:''}`};
   }
+  const isLast = runnerCtx.exIndex === tpl.exercises.length-1;
+  if(isLast) return {kind:'finish', text:'Última série concluída — hora de finalizar! 🎉'};
+  const nextDef = tpl.exercises[runnerCtx.exIndex+1];
+  const nextE = findExercise(nextDef.exerciseId);
+  return {kind:'exercise', text:`Próximo exercício · ${nextE?nextE.name:''}`};
+}
+
+function openRestTimerPicker(defaultSeconds, autoStart){
   if(autoStart){
-    startWith(defaultSeconds);
-    fab.addEventListener('click', ()=>{
-      if(confirm('Pular descanso?')) removeTimerFab();
-    });
+    startRestOverlay(defaultSeconds);
   } else {
     openModal(`
       <h2 style="margin-bottom:14px;">Cronômetro de descanso</h2>
       <div class="chip-row">
-        ${options.map(o=>`<button class="chip" data-sec="${o}">${o}s</button>`).join('')}
+        ${[30,60,90,120].map(o=>`<button class="chip" data-sec="${o}">${o}s</button>`).join('')}
       </div>
     `);
     document.querySelectorAll('[data-sec]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         closeModal();
-        startWith(Number(btn.dataset.sec));
+        startRestOverlay(Number(btn.dataset.sec));
       });
     });
+  }
+}
+
+function startRestOverlay(seconds){
+  removeTimerFab();
+  const next = getRestNextLabel();
+  const circumference = 2*Math.PI*90;
+  const overlay = document.createElement('div');
+  overlay.className = 'rest-overlay';
+  overlay.id = 'restOverlay';
+  overlay.innerHTML = `
+    <div class="rest-overlay-inner">
+      <div class="rest-eyebrow">Descanso</div>
+      <div class="rest-ring">
+        <svg viewBox="0 0 200 200">
+          <circle class="rest-ring-bg" cx="100" cy="100" r="90"></circle>
+          <circle class="rest-ring-fg" id="restRingFg" cx="100" cy="100" r="90" stroke-dasharray="${circumference}" stroke-dashoffset="0"></circle>
+        </svg>
+        <div class="rest-time" id="restTimeLabel">${seconds}</div>
+      </div>
+      <div class="rest-next">
+        <span class="rest-next-label">${next.kind==='finish'?'':'A seguir'}</span>
+        <div class="rest-next-name">${next.text}</div>
+      </div>
+      <div class="rest-actions">
+        <button class="btn btn-ghost" id="restAdd15">+15s</button>
+        <button class="btn btn-primary hero-cta" id="restSkipBtn">Pular descanso</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(()=>overlay.classList.add('open'));
+
+  const ring = overlay.querySelector('#restRingFg');
+  const label = overlay.querySelector('#restTimeLabel');
+
+  RestTimer.start(seconds, (rem, total)=>{
+    const clamped = Math.max(0, rem);
+    label.textContent = clamped;
+    ring.style.strokeDashoffset = circumference * (1 - clamped/total);
+  }, ()=>{
+    label.textContent = '0';
+    showToast('Descanso finalizado', 'Hora de voltar para a próxima série!', '⏱');
+    closeRestOverlay();
+  });
+
+  overlay.querySelector('#restSkipBtn').addEventListener('click', closeRestOverlay);
+  overlay.querySelector('#restAdd15').addEventListener('click', ()=>{
+    RestTimer.start(RestTimer.getRemaining()+15, (rem,total)=>{
+      const clamped = Math.max(0, rem);
+      label.textContent = clamped;
+      ring.style.strokeDashoffset = circumference * (1 - clamped/total);
+    }, ()=>{
+      label.textContent = '0';
+      showToast('Descanso finalizado', 'Hora de voltar para a próxima série!', '⏱');
+      closeRestOverlay();
+    });
+  });
+}
+
+function closeRestOverlay(){
+  RestTimer.stop();
+  const overlay = document.getElementById('restOverlay');
+  if(overlay){
+    overlay.classList.remove('open');
+    setTimeout(()=>overlay.remove(), 300);
   }
 }
 
@@ -1010,9 +1130,8 @@ const MUSCLE_FILTERS = ['todos','peito','costas','pernas','gluteos','ombros','bi
 const MUSCLE_LABELS = {todos:'Todos', peito:'Peito', costas:'Costas', pernas:'Pernas', gluteos:'Glúteos', ombros:'Ombros', biceps:'Bíceps', triceps:'Tríceps', abdomen:'Abdômen', cardio:'Cardio'};
 
 function renderExercises(){
-  const wrap = document.getElementById('viewWrap');
+  const wrap = document.getElementById('treinoTabContent');
   wrap.innerHTML = `
-    <div class="view-header"><div class="greeting"><h1>Exercícios</h1><p>Biblioteca completa com instruções detalhadas.</p></div></div>
     <div class="field"><input type="text" id="exSearch" placeholder="🔍 Pesquisar exercícios..." value="${escapeHtml(exerciseSearch)}"></div>
     <div class="chip-row" id="exFilters" style="margin-bottom:18px;">
       ${MUSCLE_FILTERS.map(m=>`<button class="chip ${exerciseFilter===m?'active':''}" data-filter="${m}">${MUSCLE_LABELS[m]}</button>`).join('')}
@@ -1066,10 +1185,35 @@ function openExerciseModal(exId){
 /* ======================================================================
    VIEW: HISTÓRICO
    ====================================================================== */
-function renderHistory(){
+/* ======================================================================
+   PROGRESSO — agrupa Estatísticas, Histórico e Conquistas em sub-abas
+   ====================================================================== */
+let currentProgressoTab = 'geral';
+
+function renderProgresso(){
   const wrap = document.getElementById('viewWrap');
+  const tabs = [
+    {id:'geral', label:'Visão Geral'},
+    {id:'historico', label:'Histórico'},
+    {id:'conquistas', label:'Conquistas'},
+  ];
   wrap.innerHTML = `
-    <div class="view-header"><div class="greeting"><h1>Histórico</h1><p>Todos os treinos que você já realizou.</p></div></div>
+    <div class="view-header"><div class="greeting"><h1>Progresso</h1><p>Sua evolução em números, sessões e conquistas.</p></div></div>
+    <div class="tabs" id="progressoTabs">
+      ${tabs.map(t=>`<button class="tab-btn ${currentProgressoTab===t.id?'active':''}" data-progressotab="${t.id}">${t.label}</button>`).join('')}
+    </div>
+    <div id="progressoTabContent"></div>
+  `;
+  document.querySelectorAll('[data-progressotab]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ currentProgressoTab=btn.dataset.progressotab; renderProgresso(); });
+  });
+  const renderers = {geral: renderStats, historico: renderHistory, conquistas: renderConquistas};
+  renderers[currentProgressoTab]();
+}
+
+function renderHistory(){
+  const wrap = document.getElementById('progressoTabContent');
+  wrap.innerHTML = `
     <div class="chip-row" style="margin-bottom:18px;">
       ${['semana','mes','ano','tudo'].map(f=>`<button class="chip ${historyFilter===f?'active':''}" data-hfilter="${f}">${({semana:'Semana',mes:'Mês',ano:'Ano',tudo:'Tudo'})[f]}</button>`).join('')}
     </div>
@@ -1132,19 +1276,17 @@ function openSessionDetail(id){
    VIEW: ESTATÍSTICAS
    ====================================================================== */
 function renderStats(){
-  const wrap = document.getElementById('viewWrap');
+  const wrap = document.getElementById('progressoTabContent');
+  const maxLoad = Math.max(0, ...Object.values(state.exerciseLoads).flat().map(l=>l.weight));
   wrap.innerHTML = `
-    <div class="view-header">
-      <div class="greeting"><h1>Estatísticas</h1><p>Sua evolução em números.</p></div>
-      <div class="header-actions">
-        <button class="btn btn-primary" id="quickWeightBtn">⚖️ Registrar peso</button>
-      </div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+      <button class="btn btn-primary" id="quickWeightBtn">⚖️ Registrar peso</button>
     </div>
     <div class="grid grid-4" style="margin-bottom:10px;">
+      <div class="card stat-card"><span class="stat-label">Peso inicial</span><span class="stat-value">${state.user.startWeight||state.user.weight}kg</span></div>
       <div class="card stat-card"><span class="stat-label">Streak atual</span><span class="stat-value">🔥 ${computeStreak(state.completedDates)}</span></div>
       <div class="card stat-card"><span class="stat-label">Total treinado</span><span class="stat-value">${state.history.length}</span><span class="stat-sub">treinos</span></div>
-      <div class="card stat-card"><span class="stat-label">Tempo total</span><span class="stat-value">${Math.round(state.history.reduce((a,h)=>a+h.duration,0)/60)}h</span></div>
-      <div class="card stat-card"><span class="stat-label">Volume semanal</span><span class="stat-value">${weeklyVolume()}kg</span></div>
+      <div class="card stat-card"><span class="stat-label">Maior carga</span><span class="stat-value">${maxLoad}kg</span></div>
     </div>
 
     <div class="section-title">Treinos por semana (últimas 8 semanas)</div>
@@ -1158,12 +1300,28 @@ function renderStats(){
 
     <div class="section-title">Carga levantada (últimas sessões)</div>
     <div class="card" id="chartVolume"></div>
+
+    <div class="section-title">Comparação mensal de volume</div>
+    <div class="card" id="chartMonthlyVolume"></div>
   `;
   renderBarChart(document.getElementById('chartWorkoutsWeek'), workoutsPerWeekData());
   renderLineChart(document.getElementById('chartWeight'), weightSeriesData());
   renderBarChart(document.getElementById('chartVolume'), volumeSeriesData());
+  renderBarChart(document.getElementById('chartMonthlyVolume'), monthlyVolumeData());
   renderMeasurementsCard();
   document.getElementById('quickWeightBtn').addEventListener('click', openQuickWeightModal);
+}
+
+function monthlyVolumeData(){
+  const now = new Date();
+  const months = [];
+  for(let i=5;i>=0;i--){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const next = new Date(now.getFullYear(), now.getMonth()-i+1, 1);
+    const vol = state.history.filter(h=>{const hd=new Date(h.date+'T00:00:00'); return hd>=d && hd<next;}).reduce((a,h)=>a+h.volume,0);
+    months.push({label:d.toLocaleDateString('pt-BR',{month:'short'}), value:vol});
+  }
+  return months;
 }
 
 function openQuickWeightModal(){
@@ -1274,10 +1432,9 @@ function renderProfile(){
   const tabs = [
     {id:'perfil', label:'Perfil'},
     {id:'metas', label:'Metas'},
-    {id:'progresso', label:'Progresso'},
-    {id:'conquistas', label:'Conquistas'},
     {id:'config', label:'Configurações'},
   ];
+  if(!['perfil','metas','config'].includes(currentProfileTab)) currentProfileTab='perfil';
   wrap.innerHTML = `
     <div class="view-header"><div class="greeting"><h1>Perfil</h1><p>Suas informações e preferências.</p></div></div>
     <div class="tabs" id="profileTabs">
@@ -1289,8 +1446,7 @@ function renderProfile(){
     btn.addEventListener('click', ()=>{ currentProfileTab=btn.dataset.tab; renderProfile(); });
   });
   const renderers = {
-    perfil: renderTabPerfil, metas: renderTabMetas, progresso: renderTabProgresso,
-    conquistas: renderTabConquistas, config: renderTabConfig,
+    perfil: renderTabPerfil, metas: renderTabMetas, config: renderTabConfig,
   };
   renderers[currentProfileTab]();
 }
@@ -1377,35 +1533,8 @@ function renderGoalsList(){
   });
 }
 
-function renderTabProgresso(){
-  const c = document.getElementById('profileTabContent');
-  const u = state.user;
-  const maxLoad = Math.max(0, ...Object.values(state.exerciseLoads).flat().map(l=>l.weight));
-  c.innerHTML = `
-    <div class="grid grid-3">
-      <div class="card stat-card"><span class="stat-label">Peso inicial</span><span class="stat-value">${u.startWeight||u.weight}kg</span></div>
-      <div class="card stat-card"><span class="stat-label">Peso atual</span><span class="stat-value">${u.weight}kg</span></div>
-      <div class="card stat-card"><span class="stat-label">IMC</span><span class="stat-value">${bmi()}</span></div>
-      <div class="card stat-card"><span class="stat-label">Treinos realizados</span><span class="stat-value">${state.history.length}</span></div>
-      <div class="card stat-card"><span class="stat-label">Dias consecutivos</span><span class="stat-value">🔥 ${computeStreak(state.completedDates)}</span></div>
-      <div class="card stat-card"><span class="stat-label">Maior carga</span><span class="stat-value">${maxLoad}kg</span></div>
-    </div>
-    <div class="section-title">Comparação mensal de volume</div>
-    <div class="card" id="progressChart"></div>
-  `;
-  const now = new Date();
-  const months = [];
-  for(let i=5;i>=0;i--){
-    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
-    const next = new Date(now.getFullYear(), now.getMonth()-i+1, 1);
-    const vol = state.history.filter(h=>{const hd=new Date(h.date+'T00:00:00'); return hd>=d && hd<next;}).reduce((a,h)=>a+h.volume,0);
-    months.push({label:d.toLocaleDateString('pt-BR',{month:'short'}), value:vol});
-  }
-  renderBarChart(document.getElementById('progressChart'), months);
-}
-
-function renderTabConquistas(){
-  const c = document.getElementById('profileTabContent');
+function renderConquistas(){
+  const c = document.getElementById('progressoTabContent');
   checkAchievements();
   c.innerHTML = `<div class="grid grid-4">
     ${ACHIEVEMENTS.map(a=>{
