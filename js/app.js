@@ -60,10 +60,10 @@ function applyTheme(){
 /* Shell: sidebar + mobile nav                                          */
 /* -------------------------------------------------------------------- */
 const NAV_ITEMS = [
-  {id:'dashboard', label:'Início', icon:'🏠'},
-  {id:'treino', label:'Treino', icon:'🏋'},
-  {id:'progresso', label:'Progresso', icon:'📈'},
-  {id:'profile', label:'Perfil', icon:'👤'},
+  {id:'dashboard', label:'Início', icon:'home'},
+  {id:'treino', label:'Treino', icon:'dumbbell'},
+  {id:'progresso', label:'Progresso', icon:'trending-up'},
+  {id:'profile', label:'Perfil', icon:'user'},
 ];
 
 function renderShell(){
@@ -74,7 +74,7 @@ function renderShell(){
       <nav class="nav" id="sidebarNav"></nav>
       <div class="sidebar-footer">
         <div class="theme-toggle" id="themeToggle" role="button">
-          <span>${state.user.theme==='light'?'☀️ Modo claro':'🌙 Modo escuro'}</span>
+          <span style="display:inline-flex;align-items:center;gap:8px;">${icon(state.user.theme==='light'?'sun':'moon',{size:16})}${state.user.theme==='light'?'Modo claro':'Modo escuro'}</span>
           <div class="switch"></div>
         </div>
       </div>
@@ -90,7 +90,7 @@ function renderShell(){
 function renderNavLists(){
   const html = NAV_ITEMS.map(n=>`
     <button class="nav-item ${currentView===n.id?'active':''}" data-nav="${n.id}">
-      <span class="ico">${n.icon}</span><span class="lbl">${n.label}</span>
+      <span class="ico">${icon(n.icon)}</span><span class="lbl">${n.label}</span>
     </button>`).join('');
   document.getElementById('sidebarNav').innerHTML = html;
   document.getElementById('mobileNav').innerHTML = html;
@@ -104,7 +104,7 @@ function toggleTheme(){
   persist();
   applyTheme();
   document.getElementById('themeToggle').innerHTML = `
-    <span>${state.user.theme==='light'?'☀️ Modo claro':'🌙 Modo escuro'}</span>
+    <span style="display:inline-flex;align-items:center;gap:8px;">${icon(state.user.theme==='light'?'sun':'moon',{size:16})}${state.user.theme==='light'?'Modo claro':'Modo escuro'}</span>
     <div class="switch"></div>`;
 }
 
@@ -272,7 +272,7 @@ function renderDashboard(){
         <p>Vamos continuar sua evolução hoje.</p>
       </div>
       <div class="header-actions">
-        <button class="icon-btn" id="notifBtn" aria-label="Ver notificações">🔔${state.notifications.some(n=>!n.read)?'<span class="badge-dot"></span>':''}</button>
+        <button class="icon-btn" id="notifBtn" aria-label="Ver notificações">${icon('bell')}${state.notifications.some(n=>!n.read)?'<span class="badge-dot"></span>':''}</button>
       </div>
     </div>
 
@@ -504,13 +504,9 @@ function renderEditor(){
         <button class="btn btn-ghost" id="deleteTemplateBtn" style="display:none;color:var(--red);">🗑️ Excluir treino</button>
       </div>
       <div id="editorExerciseList"></div>
-      <div class="field-row" style="margin-top:14px;align-items:flex-end;">
-        <div class="field" style="margin-bottom:0;">
-          <label>Adicionar exercício a este treino</label>
-          <select id="addExerciseSelect"></select>
-        </div>
-        <button class="btn btn-ghost" id="addExerciseBtn" style="height:44px;">Adicionar</button>
-      </div>
+      <div class="section-title" style="margin-top:20px;">Adicionar exercício</div>
+      <div class="field"><input type="text" id="addExerciseSearch" placeholder="🔍 Pesquisar exercício..."></div>
+      <div id="addExerciseResults"></div>
       <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
         <button class="btn btn-primary" id="saveTemplateBtn">Salvar alterações</button>
         <button class="btn btn-ghost" id="resetTemplateBtn">Restaurar padrão</button>
@@ -540,9 +536,8 @@ function renderEditor(){
 
   document.getElementById('saveTemplateBtn').addEventListener('click', ()=>saveTemplateEdits(templateSelect.value));
   document.getElementById('resetTemplateBtn').addEventListener('click', ()=>resetTemplateEdits(templateSelect.value));
-  document.getElementById('addExerciseBtn').addEventListener('click', ()=>{
-    const exId = document.getElementById('addExerciseSelect').value;
-    if(exId) addExerciseToTemplate(templateSelect.value, exId);
+  document.getElementById('addExerciseSearch').addEventListener('input', (e)=>{
+    renderAddExerciseSearch(templateSelect.value, e.target.value);
   });
   document.getElementById('createExerciseBtn').addEventListener('click', createCustomExercise);
   document.getElementById('duplicateTemplateBtn').addEventListener('click', ()=>duplicateTemplate(templateSelect.value));
@@ -587,14 +582,16 @@ function renderEditorExercises(templateId){
   list.innerHTML = `
     ${custom?'<div class="chip active" style="margin:14px 0 4px;">📄 Treino próprio</div>':''}
     ${hasOverride?'<div class="chip active" style="margin:14px 0 4px;">✏️ Personalizado</div>':''}
+    ${tpl.exercises.length>1?'<p class="drag-hint">Arraste pelo ⠿ pra reordenar</p>':''}
     ${tpl.exercises.map((ex,i)=>{
       const e = findExercise(ex.exerciseId);
-      return `<div class="list-row" style="align-items:flex-start;">
+      return `<div class="list-row draggable-row" style="align-items:flex-start;" data-exidx="${i}" data-exerciseid="${ex.exerciseId}">
+        <div class="drag-handle" aria-label="Reordenar">⠿</div>
         <div class="list-row-icon">${MUSCLE_ICONS[e?.muscle]||'🏋️'}</div>
         <div class="list-row-body">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
             <div class="list-row-title">${e?e.name:ex.exerciseId}</div>
-            <button class="icon-btn" data-remove-idx="${i}" title="Remover" style="width:32px;height:32px;font-size:14px;flex-shrink:0;">🗑️</button>
+            <button class="icon-btn" data-remove-idx="${i}" title="Remover" aria-label="Remover exercício" style="width:32px;height:32px;flex-shrink:0;">${icon('trash-2',{size:15})}</button>
           </div>
           <div class="field-row" style="margin-top:10px;">
             <div class="field" style="margin-bottom:0;"><label>Séries</label><input type="number" min="1" data-idx="${i}" data-key="sets" value="${ex.sets}"></div>
@@ -611,13 +608,97 @@ function renderEditorExercises(templateId){
   list.querySelectorAll('[data-remove-idx]').forEach(btn=>{
     btn.addEventListener('click', ()=>removeExerciseFromTemplate(templateId, Number(btn.dataset.removeIdx)));
   });
+  attachExerciseDragHandlers(list, templateId);
+  renderAddExerciseSearch(templateId, '');
+}
 
-  const addSelect = document.getElementById('addExerciseSelect');
+/* ------------------------------------------------------------------ */
+/* Adicionar exercício — busca em vez de dropdown (estilo Notion):    */
+/* digitar filtra a lista, clicar num resultado já adiciona.          */
+/* ------------------------------------------------------------------ */
+function renderAddExerciseSearch(templateId, query){
+  const results = document.getElementById('addExerciseResults');
+  if(!results) return;
+  const tpl = getTemplate(templateId);
   const inTemplateIds = tpl.exercises.map(ex=>ex.exerciseId);
-  const options = allExercises().filter(e=>!inTemplateIds.includes(e.id));
-  addSelect.innerHTML = options.length
-    ? options.map(e=>`<option value="${e.id}">${MUSCLE_ICONS[e.muscle]||'🏋️'} ${e.name}</option>`).join('')
-    : `<option value="">Todos os exercícios já estão nesse treino</option>`;
+  const q = query.trim().toLowerCase();
+  const matches = allExercises()
+    .filter(e=>!inTemplateIds.includes(e.id))
+    .filter(e=>!q || e.name.toLowerCase().includes(q))
+    .slice(0, 8);
+  results.innerHTML = matches.length ? matches.map(e=>`
+    <div class="list-row add-exercise-row" data-addex="${e.id}" style="cursor:pointer;">
+      <div class="list-row-icon">${MUSCLE_ICONS[e.muscle]||'🏋️'}</div>
+      <div class="list-row-body">
+        <div class="list-row-title">${e.name}</div>
+        <div class="list-row-sub">${capitalize(e.muscle)}</div>
+      </div>
+      <div class="icon-btn" style="width:32px;height:32px;color:var(--accent);flex-shrink:0;">${icon('plus',{size:16})}</div>
+    </div>
+  `).join('') : `<div class="empty-state" style="padding:16px 0;"><span class="emoji">🔍</span>${q?'Nenhum exercício encontrado.':'Todos os exercícios já estão nesse treino.'}</div>`;
+  results.querySelectorAll('[data-addex]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      addExerciseToTemplate(templateId, row.dataset.addex);
+      const searchInput = document.getElementById('addExerciseSearch');
+      if(searchInput) searchInput.value = '';
+    });
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Reordenar exercícios com arrastar-e-soltar (mouse e touch, via      */
+/* Pointer Events — funciona igual em desktop e celular).             */
+/* ------------------------------------------------------------------ */
+let exerciseDragCtx = null;
+
+function attachExerciseDragHandlers(list, templateId){
+  list.querySelectorAll('.draggable-row').forEach(row=>{
+    const handle = row.querySelector('.drag-handle');
+    if(!handle) return;
+    handle.addEventListener('pointerdown', (ev)=>{
+      ev.preventDefault();
+      exerciseDragCtx = {templateId, row, list};
+      row.classList.add('dragging');
+      const onMove = (e)=>onExerciseDragMove(e);
+      const onUp = (e)=>{
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        onExerciseDragEnd();
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+  });
+}
+
+function onExerciseDragMove(e){
+  if(!exerciseDragCtx) return;
+  const {row, list} = exerciseDragCtx;
+  const siblings = Array.from(list.querySelectorAll('.draggable-row')).filter(el=>el!==row);
+  let inserted = false;
+  for(const sib of siblings){
+    const rect = sib.getBoundingClientRect();
+    if(e.clientY < rect.top + rect.height/2){
+      list.insertBefore(row, sib);
+      inserted = true;
+      break;
+    }
+  }
+  if(!inserted) list.appendChild(row);
+}
+
+function onExerciseDragEnd(){
+  if(!exerciseDragCtx) return;
+  const {row, list, templateId} = exerciseDragCtx;
+  row.classList.remove('dragging');
+  const newOrderIds = Array.from(list.querySelectorAll('.draggable-row')).map(el=>el.dataset.exerciseid);
+  const tpl = getTemplate(templateId);
+  const queues = {};
+  tpl.exercises.forEach(ex=>{ (queues[ex.exerciseId]=queues[ex.exerciseId]||[]).push(ex); });
+  const newExercises = newOrderIds.map(id=>queues[id].shift());
+  persistTemplateExercises(templateId, newExercises);
+  exerciseDragCtx = null;
+  renderEditorExercises(templateId);
 }
 
 /* Salva a lista de exercícios de um treino no lugar certo: se for um
@@ -876,9 +957,9 @@ function renderRunnerExercise(){
 
   runnerEl.innerHTML = `
     <div class="runner-header">
-      <button class="icon-btn" id="runnerClose">✕</button>
+      <button class="icon-btn" id="runnerClose" aria-label="Fechar treino">${icon('x')}</button>
       <div style="font-weight:700;font-size:13px;color:var(--text-dim);">${runnerCtx.exIndex+1} / ${tpl.exercises.length}</div>
-      <button class="icon-btn" id="runnerRestBtn">⏱</button>
+      <button class="icon-btn" id="runnerRestBtn" aria-label="Cronômetro de descanso">${icon('clock')}</button>
     </div>
     <div class="runner-body">
       <div class="progress-track" style="max-width:400px;margin-bottom:20px;"><div class="progress-fill thin" style="width:${((runnerCtx.exIndex)/tpl.exercises.length*100)}%"></div></div>
@@ -1518,7 +1599,7 @@ function renderGoalsList(){
     <div class="list-row goal-row ${g.done?'done':''}">
       <div class="goal-check" data-toggle="${g.id}" style="cursor:pointer;">${g.done?'✓':''}</div>
       <div class="list-row-body"><div class="list-row-title">${escapeHtml(g.text)}</div></div>
-      <button class="icon-btn" data-delgoal="${g.id}" style="width:32px;height:32px;font-size:13px;">🗑️</button>
+      <button class="icon-btn" data-delgoal="${g.id}" aria-label="Remover meta" style="width:32px;height:32px;">${icon('trash-2',{size:14})}</button>
     </div>`).join('');
   list.querySelectorAll('[data-toggle]').forEach(el=>{
     el.addEventListener('click', ()=>{
@@ -1564,7 +1645,7 @@ function renderTabConfig(){
   c.innerHTML = `
     <div class="card" style="margin-bottom:14px;">
       <div class="theme-toggle" id="cfgThemeToggle" style="cursor:pointer;">
-        <span>${state.user.theme==='light'?'☀️ Modo claro':'🌙 Modo escuro'}</span><div class="switch"></div>
+        <span style="display:inline-flex;align-items:center;gap:8px;">${icon(state.user.theme==='light'?'sun':'moon',{size:16})}${state.user.theme==='light'?'Modo claro':'Modo escuro'}</span><div class="switch"></div>
       </div>
     </div>
     <div class="card" style="margin-bottom:14px;">
