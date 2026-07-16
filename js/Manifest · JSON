@@ -1,6 +1,6 @@
 {
   "name": "FitTrack — Treinos Personalizados",
-  "short_name": "FitTrack",
+  "short_name": "FitForAll",
   "description": "Organize seus treinos, acompanhe seu progresso e siga seu cronograma semanal.",
   "start_url": "./index.html",
   "scope": "./",
