@@ -1,5 +1,5 @@
 /* ==========================================================================
-   FitTrack — Persistência (LocalStorage)
+   FitForAll — Persistência (LocalStorage)
    ========================================================================== */
 
 const STORAGE_KEY = 'fittrack_state_v1';
@@ -34,6 +34,9 @@ function defaultState(){
     measurements:[],             // [{date, arm, waist, hips, thigh}] — medidas corporais
     unlockedAchievements:[],
     fullWeeksCompleted:0,
+    xp:0,                        // pontos de experiência (gamificação)
+    bestStreak:0,                // maior sequência de dias já alcançada
+    missionsClaimed:{},          // { 'YYYY-MM-DD' (início da semana): [missionId,...] }
     exerciseLoads:{},            // { exerciseId: [{date, weight, reps, notes}] }
     notifications:[],
     lastSeenNotif:0,
