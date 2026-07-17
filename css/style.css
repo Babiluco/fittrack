@@ -272,6 +272,15 @@ main.view-wrap{
 }
 .progress-fill.thin{background:var(--accent);}
 
+.insight-card{
+  font-size:13.5px;font-weight:600;padding:14px 16px;margin-bottom:10px;
+  border-left:3px solid var(--border);
+}
+.insight-card.insight-success{border-left-color:var(--purple);background:rgba(166,111,252,.08);}
+.mission-card{
+  display:flex;align-items:center;gap:14px;padding:14px 16px;
+}
+
 .ring{position:relative;width:78px;height:78px;flex-shrink:0;}
 .ring svg{transform:rotate(-90deg);}
 .ring circle{fill:none;stroke-width:8;}
@@ -472,6 +481,11 @@ main.view-wrap{
 .celebrate-stats div{text-align:center;}
 .celebrate-stats b{display:block;font-size:20px;font-family:var(--font-display);}
 .celebrate-stats span{font-size:11px;color:var(--text-dim);}
+.xp-earned{
+  font-family:var(--font-display);font-weight:800;font-size:18px;color:#fff;
+  background:var(--accent-gradient);padding:8px 20px;border-radius:var(--radius-pill);
+}
+.celebrate-extra{font-size:13px;color:var(--text);font-weight:600;margin:0;}
 
 /* Confetti */
 .confetti-piece{
