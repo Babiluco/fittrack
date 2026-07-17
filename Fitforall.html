@@ -293,6 +293,15 @@ main.view-wrap{
 }
 .progress-fill.thin{background:var(--accent);}
 
+.insight-card{
+  font-size:13.5px;font-weight:600;padding:14px 16px;margin-bottom:10px;
+  border-left:3px solid var(--border);
+}
+.insight-card.insight-success{border-left-color:var(--purple);background:rgba(166,111,252,.08);}
+.mission-card{
+  display:flex;align-items:center;gap:14px;padding:14px 16px;
+}
+
 .ring{position:relative;width:78px;height:78px;flex-shrink:0;}
 .ring svg{transform:rotate(-90deg);}
 .ring circle{fill:none;stroke-width:8;}
@@ -493,6 +502,11 @@ main.view-wrap{
 .celebrate-stats div{text-align:center;}
 .celebrate-stats b{display:block;font-size:20px;font-family:var(--font-display);}
 .celebrate-stats span{font-size:11px;color:var(--text-dim);}
+.xp-earned{
+  font-family:var(--font-display);font-weight:800;font-size:18px;color:#fff;
+  background:var(--accent-gradient);padding:8px 20px;border-radius:var(--radius-pill);
+}
+.celebrate-extra{font-size:13px;color:var(--text);font-weight:600;margin:0;}
 
 /* Confetti */
 .confetti-piece{
@@ -674,6 +688,9 @@ function defaultState(){
     measurements:[],             // [{date, arm, waist, hips, thigh}] — medidas corporais
     unlockedAchievements:[],
     fullWeeksCompleted:0,
+    xp:0,                        // pontos de experiência (gamificação)
+    bestStreak:0,                // maior sequência de dias já alcançada
+    missionsClaimed:{},          // { 'YYYY-MM-DD' (início da semana): [missionId,...] }
     exerciseLoads:{},            // { exerciseId: [{date, weight, reps, notes}] }
     notifications:[],
     lastSeenNotif:0,
@@ -2430,6 +2447,8 @@ function finishWorkout(){
 
   // marca meta de treino do dia como progresso implícito (não força conclusão)
   state.streak = computeStreak(state.completedDates);
+  const isNewStreakRecord = state.streak > (state.bestStreak||0) && state.streak>=2;
+  if(isNewStreakRecord) state.bestStreak = state.streak;
 
   // verifica semana completa
   const wp = weekProgressAfterSave();
@@ -2439,15 +2458,18 @@ function finishWorkout(){
 
   persist();
   checkAchievements();
+  addXp(50);
 
   if(newRecord) pushNotification('Novo recorde! 🎉', 'Você superou sua carga anterior em um exercício.', '🏆');
+  if(isNewStreakRecord) pushNotification('Novo recorde de sequência!', `${state.streak} dias treinando seguidos.`, '🔥');
 
-  showCompletionScreen(session);
+  showCompletionScreen(session, {xp:50, newRecord, isNewStreakRecord});
 }
 
 function weekProgressAfterSave(){ return weekProgress(); }
 
-function showCompletionScreen(session){
+function showCompletionScreen(session, extra){
+  extra = extra || {};
   const runnerEl = document.getElementById('runnerEl');
   runnerEl.innerHTML = `
     <div class="runner-body" style="justify-content:center;flex:1;">
@@ -2460,6 +2482,9 @@ function showCompletionScreen(session){
           <div><b>${session.volume}kg</b><span>Volume</span></div>
           <div><b>${session.calories}</b><span>Kcal</span></div>
         </div>
+        <div class="xp-earned">+${extra.xp||0} XP</div>
+        ${extra.isNewStreakRecord?`<p class="celebrate-extra">🔥 Novo recorde de sequência: ${state.streak} dias!</p>`:''}
+        ${extra.newRecord?`<p class="celebrate-extra">🏆 Novo recorde de carga em algum exercício!</p>`:''}
         <button class="btn btn-primary btn-block" id="closeCelebrate">Concluir</button>
       </div>
     </div>
@@ -2627,10 +2652,59 @@ function openSessionDetail(id){
 function renderStats(){
   const wrap = document.getElementById('progressoTabContent');
   const maxLoad = Math.max(0, ...Object.values(state.exerciseLoads).flat().map(l=>l.weight));
+  const lvl = xpProgress(state.xp||0);
+  const insights = generateInsights();
+  const missions = getWeeklyMissions();
+  const lw = lastWeekSummary();
+
   wrap.innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
       <button class="btn btn-primary" id="quickWeightBtn">⚖️ Registrar peso</button>
     </div>
+
+    <div class="card hero-card" style="margin-bottom:20px;">
+      <div class="hero-eyebrow">Nível ${lvl.level}</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+        <span style="font-family:var(--font-display);font-weight:800;font-size:20px;">${state.xp||0} XP</span>
+        <span style="font-size:12px;color:var(--text-dim);">Faltam ${lvl.next-(state.xp||0)} XP pro nível ${lvl.level+1}</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${lvl.pct}%;"></div></div>
+    </div>
+
+    ${insights.length?`
+      <div class="section-title">Insights</div>
+      <div style="margin-bottom:20px;">
+        ${insights.map(i=>`<div class="card insight-card ${i.tone==='success'?'insight-success':''}">${i.text}</div>`).join('')}
+      </div>
+    `:''}
+
+    <div class="section-title">Missões da semana</div>
+    <div style="margin-bottom:20px;">
+      ${missions.map(m=>`
+        <div class="card mission-card">
+          <div style="flex:1;min-width:0;">
+            <div class="list-row-title">${m.label}</div>
+            <div class="progress-track" style="margin-top:8px;"><div class="progress-fill" style="width:${Math.min(100,m.progress/m.total*100)}%;"></div></div>
+          </div>
+          ${m.claimed
+            ?`<span class="chip active" style="flex-shrink:0;">✓ +${m.xp} XP</span>`
+            :m.done?`<button class="btn btn-primary" data-claim="${m.id}" style="flex-shrink:0;">Resgatar +${m.xp} XP</button>`
+            :`<span class="chip" style="flex-shrink:0;">${m.progress}/${m.total}</span>`}
+        </div>
+      `).join('')}
+    </div>
+
+    ${lw.count>0?`
+      <div class="section-title">Resumo da semana passada</div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="grid grid-3">
+          <div class="stat-card"><span class="stat-label">Treinos</span><span class="stat-value">${lw.count}</span></div>
+          <div class="stat-card"><span class="stat-label">Volume total</span><span class="stat-value">${lw.volume}kg</span></div>
+          <div class="stat-card"><span class="stat-label">Peso</span><span class="stat-value">${lw.weightStart&&lw.weightEnd?`${lw.weightEnd>lw.weightStart?'+':''}${(lw.weightEnd-lw.weightStart).toFixed(1)}kg`:'—'}</span></div>
+        </div>
+      </div>
+    `:''}
+
     <div class="grid grid-4" style="margin-bottom:10px;">
       <div class="card stat-card"><span class="stat-label">Peso inicial</span><span class="stat-value">${state.user.startWeight||state.user.weight}kg</span></div>
       <div class="card stat-card"><span class="stat-label">Streak atual</span><span class="stat-value">🔥 ${computeStreak(state.completedDates)}</span></div>
@@ -2659,6 +2733,9 @@ function renderStats(){
   renderBarChart(document.getElementById('chartMonthlyVolume'), monthlyVolumeData());
   renderMeasurementsCard();
   document.getElementById('quickWeightBtn').addEventListener('click', openQuickWeightModal);
+  wrap.querySelectorAll('[data-claim]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ claimMission(btn.dataset.claim); renderStats(); });
+  });
 }
 
 function monthlyVolumeData(){
@@ -2903,10 +2980,160 @@ function checkAchievements(){
   ACHIEVEMENTS.forEach(a=>{
     if(!state.unlockedAchievements.includes(a.id) && a.check(snapshot)){
       state.unlockedAchievements.push(a.id);
+      addXp(100);
       pushNotification('Conquista desbloqueada!', a.name, a.emoji);
     }
   });
   persist();
+}
+
+/* ======================================================================
+   GAMIFICAÇÃO — XP, níveis e missões semanais
+   ====================================================================== */
+function xpForLevel(level){ return 50 * level * level; }
+
+function levelFromXp(xp){
+  let level = 1;
+  while(xp >= xpForLevel(level+1)) level++;
+  return level;
+}
+
+function xpProgress(xp){
+  const level = levelFromXp(xp);
+  const cur = xpForLevel(level);
+  const next = xpForLevel(level+1);
+  return {level, cur, next, pct: Math.min(100, Math.round((xp-cur)/(next-cur)*100))};
+}
+
+function addXp(amount){
+  const before = levelFromXp(state.xp||0);
+  state.xp = (state.xp||0) + amount;
+  persist();
+  const after = levelFromXp(state.xp);
+  if(after > before){
+    launchConfetti();
+    pushNotification('Você subiu de nível!', `Agora você é nível ${after}.`, '⭐');
+  }
+}
+
+function weekKey(d){ return todayKey(startOfWeek(d||new Date())); }
+
+function getWeeklyMissions(){
+  const wk = weekKey();
+  const claimed = state.missionsClaimed[wk] || [];
+  const start = startOfWeek(new Date());
+  const end = new Date(start.getTime()+7*86400000);
+
+  const daysThisWeek = Object.keys(state.completedDates).filter(k=>{
+    const d = new Date(k+'T00:00:00');
+    return d>=start && d<end;
+  }).length;
+
+  const newRecordThisWeek = Object.values(state.exerciseLoads).some(logs=>{
+    const sorted = [...logs].sort((a,b)=>a.date.localeCompare(b.date));
+    return sorted.some((l,i)=>{
+      if(i===0) return false;
+      const d = new Date(l.date+'T00:00:00');
+      if(d<start || d>=end) return false;
+      const prevMax = Math.max(0, ...sorted.slice(0,i).map(x=>x.weight));
+      return l.weight>prevMax;
+    });
+  });
+
+  const goalDoneThisWeek = state.goals.some(g=>g.done);
+
+  const defs = [
+    {id:'train3', label:'Treine 3 dias essa semana', progress:Math.min(daysThisWeek,3), total:3, done:daysThisWeek>=3, xp:40},
+    {id:'record', label:'Bata uma nova carga em algum exercício', progress:newRecordThisWeek?1:0, total:1, done:newRecordThisWeek, xp:40},
+    {id:'goal', label:'Conclua uma meta', progress:goalDoneThisWeek?1:0, total:1, done:goalDoneThisWeek, xp:30},
+  ];
+  return defs.map(m=>({...m, claimed:claimed.includes(m.id)}));
+}
+
+function claimMission(missionId){
+  const wk = weekKey();
+  const missions = getWeeklyMissions();
+  const m = missions.find(x=>x.id===missionId);
+  if(!m || !m.done || m.claimed) return;
+  state.missionsClaimed[wk] = state.missionsClaimed[wk] || [];
+  state.missionsClaimed[wk].push(missionId);
+  persist();
+  addXp(m.xp);
+  showToast('Missão concluída!', `+${m.xp} XP`, '🎯');
+}
+
+/* ======================================================================
+   INSIGHTS DE PROGRESSO — frases geradas a partir dos dados reais,
+   em vez de só gráficos.
+   ====================================================================== */
+function generateInsights(){
+  const insights = [];
+  const streak = computeStreak(state.completedDates);
+
+  if(streak>=3){
+    insights.push({text:`Você está numa sequência de ${streak} dias treinando.`, tone:'default'});
+  }
+
+  const log = [...(state.weightLog||[])].sort((a,b)=>a.date.localeCompare(b.date));
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-30);
+  const recent = log.filter(l=>new Date(l.date+'T00:00:00')>=cutoff);
+  if(recent.length>=2){
+    const delta = recent[recent.length-1].weight - recent[0].weight;
+    if(Math.abs(delta)>=0.3){
+      const dir = delta<0 ? 'caiu' : 'subiu';
+      insights.push({text:`Seu peso ${dir} ${Math.abs(delta).toFixed(1)}kg no último mês.`, tone:'default'});
+    }
+  }
+
+  let best = null;
+  Object.keys(state.exerciseLoads).forEach(exId=>{
+    const logs = [...state.exerciseLoads[exId]].sort((a,b)=>a.date.localeCompare(b.date));
+    if(logs.length>=2){
+      const first = logs[0].weight, last = logs[logs.length-1].weight;
+      if(first>0){
+        const pct = ((last-first)/first)*100;
+        if(pct>=5 && (!best || pct>best.pct)){
+          const e = findExercise(exId);
+          best = {pct, name: e?e.name:exId};
+        }
+      }
+    }
+  });
+  if(best){
+    insights.push({text:`Você aumentou ${Math.round(best.pct)}% na carga do ${best.name}.`, tone:'success'});
+  }
+
+  const start = startOfWeek(new Date());
+  const lastWeekStart = new Date(start.getTime()-7*86400000);
+  const thisWeekCount = weekProgress().done;
+  const lastWeekCount = Object.keys(state.completedDates).filter(k=>{
+    const d = new Date(k+'T00:00:00');
+    return d>=lastWeekStart && d<start;
+  }).length;
+  if(lastWeekCount>0 && thisWeekCount>lastWeekCount){
+    insights.push({text:`Essa semana você já treinou ${thisWeekCount-lastWeekCount} vez(es) a mais que a semana passada.`, tone:'default'});
+  }
+
+  return insights.slice(0,3);
+}
+
+function lastWeekSummary(){
+  const start = startOfWeek(new Date());
+  const lastStart = new Date(start.getTime()-7*86400000);
+  const sessions = state.history.filter(h=>{
+    const d = new Date(h.date+'T00:00:00');
+    return d>=lastStart && d<start;
+  });
+  const weightLog = [...(state.weightLog||[])].filter(l=>{
+    const d = new Date(l.date+'T00:00:00');
+    return d>=lastStart && d<start;
+  }).sort((a,b)=>a.date.localeCompare(b.date));
+  return {
+    count: sessions.length,
+    volume: sessions.reduce((a,s)=>a+s.volume,0),
+    weightStart: weightLog[0]?.weight,
+    weightEnd: weightLog[weightLog.length-1]?.weight,
+  };
 }
 
 function renderTabConfig(){
