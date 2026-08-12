@@ -3,20 +3,29 @@
    ========================================================================== */
 
 const STORAGE_KEY = CONFIG.STORAGE_KEY;
+const LEGACY_STORAGE_KEY = CONFIG.STORAGE_KEY;
+const LEGACY_OWNER_KEY = `${CONFIG.STORAGE_KEY}:legacy_owner`;
+let activeStorageKey = LEGACY_STORAGE_KEY;
 
-function defaultState(){
+function defaultUser(authUser){
+  const meta = authUser?.user_metadata || {};
+  const emailName = authUser?.email ? authUser.email.split('@')[0] : '';
+  return {
+    name: meta.name || meta.display_name || emailName || 'Usuária FitTrack',
+    height:'',
+    weight:'',
+    startWeight:'',
+    goal:'hipertrofia',
+    availableDays:3,
+    avgWorkoutTime:45,
+    theme:'dark',
+  };
+}
+
+function defaultState(authUser){
   return {
     version:1,
-    user:{
-      name:'Barbara',
-      height:165,
-      weight:64,
-      startWeight:68,
-      goal:'hipertrofia',
-      availableDays:5,
-      avgWorkoutTime:50,
-      theme:'dark',
-    },
+    user: defaultUser(authUser),
     weekPlan: JSON.parse(JSON.stringify(DEFAULT_WEEK_PLAN)),
     templateOverrides:{},      // { templateId: { exercises:[...] } } — Treinos e Progresso pelo usuário
     customTemplates:{},        // { templateId: {...} } — treinos criados do zero (ex: duplicados)
@@ -37,6 +46,7 @@ function defaultState(){
     unlockedMilestones:[],        // ids de marcos de transformação já desbloqueados (ver photos.js)
     scheduleOverrides:{},        // { 'YYYY-MM-DD': {type:'workout',templateId} | {type:'rest'} | {type:'cardio'} | {type:'mobility'} | {type:'custom',label} }
     rescheduleDismissed:{},      // { 'YYYY-MM-DD': true } — dias perdidos que a pessoa já dispensou a sugestão de remarcar
+    activeWorkoutSession:null,   // treino em andamento, sobrevive a fechar o app — ver app.js (persistRunnerSession/restoreRunnerSession). null = nenhum treino ativo.
     activeWorkoutSession:null,   // treino em andamento (sobrevive a fechar o app/navegador) — ver openRunner/persistRunnerSession em app.js
     unlockedAchievements:[],
     fullWeeksCompleted:0,
@@ -49,26 +59,83 @@ function defaultState(){
   };
 }
 
+function storageKeyForUser(userId){
+  if(!userId) return LEGACY_STORAGE_KEY;
+  return `${LEGACY_STORAGE_KEY}:user:${userId}`;
+}
 
+function getStorageKey(){
+  return activeStorageKey;
+}
 
-function loadState(){
+function mergeStoredState(parsed, authUser){
+  return Object.assign(defaultState(authUser), parsed, {
+    user: Object.assign(defaultState(authUser).user, parsed.user||{}),
+  });
+}
+
+function loadStateFromKey(key, authUser){
   try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return defaultState();
+    const raw = localStorage.getItem(key);
+    if(!raw) return defaultState(authUser);
     const parsed = JSON.parse(raw);
-    // merge defaults for forward-compat
-    return Object.assign(defaultState(), parsed, {
-      user: Object.assign(defaultState().user, parsed.user||{}),
-    });
+    return mergeStoredState(parsed, authUser);
   }catch(e){
     console.error('Erro ao carregar dados', e);
-    return defaultState();
+    return defaultState(authUser);
   }
+}
+
+function loadState(){
+  return loadStateFromKey(activeStorageKey, null);
+}
+
+function legacyStateLooksLikeBarbara(legacyState, authUser){
+  const legacyUserName = String(legacyState?.user?.name || '').toLowerCase();
+  const authName = String(authUser?.user_metadata?.name || authUser?.user_metadata?.display_name || '').toLowerCase();
+  const emailName = String(authUser?.email || '').split('@')[0].toLowerCase();
+  if(authName && legacyUserName && authName === legacyUserName) return true;
+  return authName.includes('barbara') || emailName.includes('barbara');
+}
+
+function shouldUseLegacyStateForUser(authUser, legacyState){
+  if(!authUser || !legacyState) return false;
+  const ownerId = localStorage.getItem(LEGACY_OWNER_KEY);
+  if(ownerId) return ownerId === authUser.id;
+  return legacyStateLooksLikeBarbara(legacyState, authUser);
+}
+
+function activateUserStorage(authUser){
+  if(!authUser){
+    activeStorageKey = LEGACY_STORAGE_KEY;
+    return loadStateFromKey(activeStorageKey, null);
+  }
+
+  const userKey = storageKeyForUser(authUser.id);
+  activeStorageKey = userKey;
+  const userRaw = localStorage.getItem(userKey);
+  if(userRaw) return loadStateFromKey(userKey, authUser);
+
+  const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+  if(legacyRaw){
+    try{
+      const legacyParsed = JSON.parse(legacyRaw);
+      if(shouldUseLegacyStateForUser(authUser, legacyParsed)){
+        localStorage.setItem(LEGACY_OWNER_KEY, authUser.id);
+        localStorage.setItem(userKey, legacyRaw);
+        return mergeStoredState(legacyParsed, authUser);
+      }
+    }catch(e){
+      console.error('Erro ao avaliar dados locais legados', e);
+    }
+  }
+
+  return defaultState(authUser);
 }
 
 function saveState(state){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(activeStorageKey, JSON.stringify(state));
     return true;
   }catch(e){
     console.error('Erro ao salvar dados', e);
