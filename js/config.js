@@ -18,8 +18,14 @@ const CONFIG = {
   API_URL: null,              // ainda não existe backend — fica null até existir
   STORAGE_KEY: 'fittrack_state_v1', // chave do localStorage (mantida como estava, mudar apagaria dados salvos de quem já usa o app)
 
+  SUPABASE: {
+    URL: 'https://usrcbdybqychocsdajhv.supabase.co',
+    PUBLISHABLE_KEY: 'sb_publishable_1aTv01nUUDD5vw6gyuQfjQ_B8YoiJ08',
+    PASSWORD_REDIRECT_URL: window.location.origin + window.location.pathname,
+  },
+
   FEATURES: {
     CLOUD_SYNC: false,        // sync.js já está pronto, mas fica desligado até existir backend
-    AUTH: false,               // auth.js já está pronto, mas fica desligado até existir backend
+    AUTH: true,
   },
 };
