@@ -434,7 +434,7 @@ function renderDashboard(){
           <div class="card mini-preview-row" style="margin-bottom:16px;">
             <div class="list-row-icon">⚖️</div>
             <div style="flex:1;min-width:0;">
-              <div style="font-weight:700;font-size:14px;">${lastWeight.weight}kg</div>
+              <div style="font-weight:700;font-size:14px;">${WorkoutProgression.formatKg(lastWeight.weight)}</div>
               <div style="color:var(--text-dim);font-size:12.5px;">${fmtDate(lastWeight.date)}</div>
             </div>
           </div>
@@ -489,7 +489,7 @@ function renderDashboard(){
             <div class="list-row-icon">${MUSCLE_ICONS[getTemplate(lastSession.templateId)?.muscle]||'🏋️'}</div>
             <div style="flex:1;min-width:0;">
               <div style="font-weight:700;font-size:14px;">${lastSession.name}</div>
-              <div style="color:var(--text-dim);font-size:12.5px;">${fmtDate(lastSession.date)} · ${lastSession.duration} min · ${lastSession.volume}kg de volume</div>
+              <div style="color:var(--text-dim);font-size:12.5px;">${fmtDate(lastSession.date)} · ${lastSession.duration} min · ${workoutDisplayMetrics(lastSession).totalLoad>0 ? WorkoutProgression.formatKg(workoutDisplayMetrics(lastSession).totalLoad)+' carga' : 'peso corporal'} · ${workoutDisplayMetrics(lastSession).totalReps} reps</div>
             </div>
           </div>
         ` : `<div class="empty-state"><span class="emoji">📋</span>Seu histórico de treinos aparece aqui.</div>`}
@@ -697,7 +697,7 @@ function renderCalendarHeatmap(){
   for(let i=0;i<days.length;i+=7) weeks.push(days.slice(i,i+7));
   el.innerHTML = `<div class="heatmap-grid">
     ${weeks.map(week=>`<div class="heatmap-col">
-      ${week.map(d=>`<div class="heatmap-cell" style="background:${levelColor[d.level]};" title="${fmtDate(d.dateKey)} · ${d.volume}kg"></div>`).join('')}
+      ${week.map(d=>`<div class="heatmap-cell" style="background:${levelColor[d.level]};" title="${fmtDate(d.dateKey)} · ${WorkoutProgression.formatKg(d.volume)} volume de treino"></div>`).join('')}
     </div>`).join('')}
   </div>`;
 }
@@ -721,12 +721,15 @@ function openDayDetail(dateKey){
   const tpl = plan.tpl;
   let bodyExtra = '';
   if(session){
+    const metrics = workoutDisplayMetrics(session);
     const prsThatDay = Analytics.detectPRs().filter(pr=>pr.date===dateKey);
     bodyExtra = `
       <div class="chip-row" style="margin:14px 0;">
         <span class="chip active">✔ Concluído</span>
         <span class="chip">${session.duration} min</span>
-        <span class="chip">${session.volume}kg volume</span>
+        <span class="chip">${metrics.totalLoad>0 ? WorkoutProgression.formatKg(metrics.totalLoad)+' carga' : 'peso corporal'}</span>
+        <span class="chip">${metrics.totalReps} reps</span>
+        <span class="chip">${WorkoutProgression.formatKg(metrics.trainingVolume)} volume</span>
         <span class="chip">${session.calories} kcal</span>
       </div>
       ${prsThatDay.length?`<div class="card" style="margin-bottom:14px;"><div class="list-row-title">🏆 Recordes nesse dia</div>${prsThatDay.map(pr=>`<p style="font-size:12.5px;color:var(--text-dim);margin-top:4px;">${pr.label}: ${pr.value}</p>`).join('')}</div>`:''}
@@ -750,7 +753,7 @@ function openDayDetail(dateKey){
           <div class="list-row-icon">${MUSCLE_ICONS[e.muscle]}</div>
           <div class="list-row-body">
             <div class="list-row-title">${e.name}</div>
-            <div class="list-row-sub">${ex.sets} séries × ${ex.reps} reps ${ex.load?`· ${ex.load}kg`:''}</div>
+            <div class="list-row-sub">${ex.sets} séries × ${ex.reps} reps ${ex.load?`· ${WorkoutProgression.formatKg(ex.load)}`:''}</div>
           </div>
         </div>`;
       }).join('')}
@@ -1269,7 +1272,7 @@ function openWorkoutDetail(templateId, dateKey){
           <div class="list-row-icon">${MUSCLE_ICONS[e.muscle]}</div>
           <div class="list-row-body">
             <div class="list-row-title">${e.name}</div>
-            <div class="list-row-sub">${ex.sets} séries × ${ex.reps} reps ${ex.load?`· ${ex.load}kg`:''}</div>
+            <div class="list-row-sub">${ex.sets} séries × ${ex.reps} reps ${ex.load?`· ${WorkoutProgression.formatKg(ex.load)}`:''}</div>
           </div>
         </div>`;
       }).join('')}
@@ -1432,7 +1435,7 @@ function closeRunner(){
 }
 
 function formatSetLine(set){
-  return `${WorkoutProgression.formatNumber(set.weight)} kg × ${Number(set.reps)||0}`;
+  return setDisplayText(set);
 }
 
 function renderPreviousPerformance(previous){
@@ -1591,8 +1594,9 @@ function renderRunnerExercise(){
       <div class="exercise-summary">
         <div><span>Séries</span><b>${summary.setsCompleted}/${setsArr.length}</b></div>
         <div><span>Reps</span><b>${summary.totalReps}</b></div>
-        <div><span>Volume</span><b>${WorkoutProgression.formatNumber(summary.currentVolume)} kg</b></div>
-        <div><span>Anterior</span><b>${summary.previousVolume ? `${WorkoutProgression.formatNumber(summary.previousVolume)} kg` : '—'}</b></div>
+        <div><span>Carga total</span><b>${WorkoutProgression.formatKg(summary.totalLoad)}</b></div>
+        <div><span>Volume</span><b>${WorkoutProgression.formatKg(summary.trainingVolume)}</b></div>
+        <div><span>Volume anterior</span><b>${summary.previousVolume ? WorkoutProgression.formatKg(summary.previousVolume) : '—'}</b></div>
         <div><span>Atual vs anterior</span><b>${summary.deltaPct===null ? '—' : `${summary.deltaPct>=0?'↑':'↓'} ${Math.abs(summary.deltaPct).toFixed(1)}%`}</b></div>
       </div>
       ${progression ? `<div class="progression-suggestion"><b>${progression.message}</b><span>${progression.next}</span></div>` : ''}
@@ -2036,6 +2040,7 @@ function showCompletionScreen(session, extra){
   extra = extra || {};
   const motivation = FINISH_MOTIVATION[Math.floor(Math.random()*FINISH_MOTIVATION.length)];
   const runnerEl = document.getElementById('runnerEl');
+  const metrics = workoutDisplayMetrics(session);
   runnerEl.innerHTML = `
     <div class="runner-body" style="justify-content:center;flex:1;">
       <div class="celebrate">
@@ -2044,11 +2049,15 @@ function showCompletionScreen(session, extra){
         <p>Treino concluído com sucesso.</p>
         <div class="celebrate-stats">
           <div><b>${session.duration}min</b><span>Duração</span></div>
-          <div><b>${session.volume}kg</b><span>Volume</span></div>
-          <div><b>${session.calories}</b><span>Kcal</span></div>
+          <div><b>${metrics.totalLoad>0 ? WorkoutProgression.formatKg(metrics.totalLoad) : '0 kg'}</b><span>Carga total</span></div>
+          <div><b>${metrics.totalReps}</b><span>Reps</span></div>
         </div>
         <div class="celebrate-stats">
+          <div><b>${WorkoutProgression.formatKg(metrics.trainingVolume)}</b><span>Volume</span></div>
+          <div><b>${session.calories}</b><span>Kcal</span></div>
           <div><b>${extra.exercisesCompleted||0}/${extra.totalExercises||0}</b><span>Exercícios</span></div>
+        </div>
+        <div class="celebrate-stats">
           <div><b>${extra.setsCompleted||0}</b><span>Séries</span></div>
           <div><b>🔥 ${state.streak}</b><span>Sequência</span></div>
         </div>
@@ -2176,10 +2185,12 @@ function openExerciseAnalytics(exId){
       <div class="exercise-history-stats">
         <div><span>Sessões</span><b>${stats.sessionsCount}</b></div>
         <div><span>Último treino</span><b>${stats.lastPerformed ? fmtDate(stats.lastPerformed) : 'Primeira vez'}</b></div>
-        <div><span>Melhor carga</span><b>${stats.bestWeight ? `${WorkoutProgression.formatNumber(stats.bestWeight)} kg` : '—'}</b></div>
-        <div><span>Mais reps</span><b>${stats.bestReps || '—'}</b></div>
-        <div><span>Melhor 1RM</span><b>${stats.bestOneRm ? `${WorkoutProgression.formatNumber(stats.bestOneRm)} kg` : '—'}</b></div>
-        <div><span>Volume total</span><b>${WorkoutProgression.formatNumber(stats.totalVolume)} kg</b></div>
+        <div><span>Melhor carga</span><b>${stats.bestWeight ? WorkoutProgression.formatKg(stats.bestWeight) : '—'}</b></div>
+        <div><span>Mais reps em série</span><b>${stats.bestReps || '—'}</b></div>
+        <div><span>Melhor 1RM</span><b>${stats.bestOneRm ? WorkoutProgression.formatKg(stats.bestOneRm) : '—'}</b></div>
+        <div><span>Carga total</span><b>${WorkoutProgression.formatKg(stats.totalLoad)}</b></div>
+        <div><span>Repetições</span><b>${stats.totalReps}</b></div>
+        <div><span>Volume de treino</span><b>${WorkoutProgression.formatKg(stats.totalVolume)}</b></div>
       </div>
 
       <div class="section-title">Performance atual</div>
@@ -2236,10 +2247,11 @@ function openExerciseAnalytics(exId){
           <details class="exercise-session" ${index===0?'open':''}>
             <summary>
               <span>${fmtDate(session.date)}</span>
-              <b>Volume: ${WorkoutProgression.formatNumber(session.volume)} kg</b>
+              <b>${session.totalLoad>0 ? WorkoutProgression.formatKg(session.totalLoad) + ' carga' : 'Peso corporal'} · ${session.totalReps} reps</b>
             </summary>
             <div class="exercise-session-sets">
-              ${session.sets.map(set=>`<span>${WorkoutProgression.formatNumber(set.weight)} kg × ${set.reps}</span>`).join('')}
+              ${session.sets.map(set=>`<span>${setDisplayText(set)}</span>`).join('')}
+              <small>Volume de treino: ${WorkoutProgression.formatKg(session.trainingVolume||session.volume)}</small>
               ${session.legacy?`<small>Registro antigo importado de cargas salvas.</small>`:''}
             </div>
           </details>
@@ -2265,6 +2277,29 @@ function renderExerciseProgressChart(exId){
     return;
   }
   renderLineChart(chart, points, {height:180});
+}
+
+function validDisplaySets(sets){
+  return (sets||[]).filter(set=>
+    set && set.done && !set.skipped &&
+    set.weight !== undefined && set.weight !== null && set.weight !== '' &&
+    Number(set.reps)>0 && Number(set.weight)>=0
+  );
+}
+
+function setDisplayText(set){
+  const weight = Number(set.weight)||0;
+  const loadLabel = weight>0 ? WorkoutProgression.formatKg(weight) : 'Peso corporal';
+  return `${loadLabel} × ${Number(set.reps)||0}`;
+}
+
+function workoutDisplayMetrics(session){
+  const sets = (session.exercisesLog||[]).flatMap(ex=>validDisplaySets(ex.sets));
+  return {
+    totalLoad: sets.reduce((sum,set)=>sum+(Number(set.weight)||0),0),
+    totalReps: sets.reduce((sum,set)=>sum+(Number(set.reps)||0),0),
+    trainingVolume: sets.reduce((sum,set)=>sum+((Number(set.weight)||0) * (Number(set.reps)||0)),0),
+  };
 }
 
 /* ======================================================================
@@ -2329,7 +2364,7 @@ function renderAnalysis(){
     <div class="section-title" style="margin-top:0;">Resumo da semana</div>
     <div class="grid grid-3" style="margin-bottom:20px;">
       <div class="card stat-card"><span class="stat-label">Treinos</span><span class="stat-value">${ws.workouts}</span></div>
-      <div class="card stat-card"><span class="stat-label">Volume</span><span class="stat-value">${ws.volume}<span style="font-size:12px;">kg</span></span></div>
+      <div class="card stat-card"><span class="stat-label">Volume de treino</span><span class="stat-value">${WorkoutProgression.formatKg(ws.volume)}</span></div>
       <div class="card stat-card"><span class="stat-label">Kcal</span><span class="stat-value">${ws.calories}</span></div>
       <div class="card stat-card"><span class="stat-label">Duração média</span><span class="stat-value">${ws.avgDuration}<span style="font-size:12px;">min</span></span></div>
       <div class="card stat-card"><span class="stat-label">Grupo principal</span><span class="stat-value" style="font-size:16px;">${ws.topMuscle||'—'}</span></div>
@@ -2339,13 +2374,13 @@ function renderAnalysis(){
     <div class="section-title">Resumo do mês</div>
     <div class="grid grid-3" style="margin-bottom:20px;">
       <div class="card stat-card"><span class="stat-label">Treinos</span><span class="stat-value">${ms.workouts}</span></div>
-      <div class="card stat-card"><span class="stat-label">Volume total</span><span class="stat-value">${ms.volume}<span style="font-size:12px;">kg</span></span></div>
-      <div class="card stat-card"><span class="stat-label">Peso corporal</span><span class="stat-value" style="font-size:16px;">${ms.weightTrend!=null?`${ms.weightTrend>0?'+':''}${ms.weightTrend.toFixed(1)}kg`:'—'}</span></div>
+      <div class="card stat-card"><span class="stat-label">Volume de treino</span><span class="stat-value">${WorkoutProgression.formatKg(ms.volume)}</span></div>
+      <div class="card stat-card"><span class="stat-label">Peso corporal</span><span class="stat-value" style="font-size:16px;">${ms.weightTrend!=null?`${ms.weightTrend>0?'+':''}${WorkoutProgression.formatKg(Math.abs(ms.weightTrend))}`:'—'}</span></div>
     </div>
     ${ms.topExercises.length ? `
       <div class="card" style="margin-bottom:20px;">
         <div class="list-row-title" style="margin-bottom:10px;">Exercícios mais treinados no mês</div>
-        ${ms.topExercises.map(ex=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-top:1px solid var(--border);"><span>${ex.name}</span><span style="color:var(--text-dim);">${ex.volume}kg</span></div>`).join('')}
+        ${ms.topExercises.map(ex=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-top:1px solid var(--border);"><span>${ex.name}</span><span style="color:var(--text-dim);">${WorkoutProgression.formatKg(ex.volume)} volume</span></div>`).join('')}
       </div>
     `:''}
 
@@ -2426,15 +2461,20 @@ function renderHistoryList(){
 
   const sessions = [...state.history].filter(s=> new Date(s.date+'T00:00:00') >= cutoff).sort((a,b)=>b.date.localeCompare(a.date));
   if(sessions.length===0){ list.innerHTML = `<div class="empty-state"><span class="emoji">🗂️</span>Nenhum treino registrado neste período.</div>`; return; }
-  list.innerHTML = sessions.map(s=>`
+  list.innerHTML = sessions.map(s=>{
+    const metrics = workoutDisplayMetrics(s);
+    const loadLabel = metrics.totalLoad>0 ? `${WorkoutProgression.formatKg(metrics.totalLoad)} carga` : 'peso corporal';
+    return `
     <div class="list-row" data-session="${s.id}" style="cursor:pointer;">
       <div class="list-row-icon">${MUSCLE_ICONS[getTemplate(s.templateId)?.muscle]||'🏋️'}</div>
       <div class="list-row-body">
         <div class="list-row-title">${s.name}</div>
-        <div class="list-row-sub">${fmtDate(s.date)} · ${s.duration}min · ${s.volume}kg volume · ${s.calories}kcal</div>
+        <div class="list-row-sub">${fmtDate(s.date)} · ${s.duration} min · ${loadLabel} · ${metrics.totalReps} reps</div>
+        <div class="list-row-sub">Volume de treino: ${WorkoutProgression.formatKg(metrics.trainingVolume)}</div>
       </div>
       <div style="color:var(--text-dim);">→</div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   list.querySelectorAll('[data-session]').forEach(row=>{
     row.addEventListener('click', ()=>openSessionDetail(row.dataset.session));
   });
@@ -2443,20 +2483,30 @@ function renderHistoryList(){
 function openSessionDetail(id){
   const s = state.history.find(x=>x.id===id);
   if(!s) return;
+  const metrics = workoutDisplayMetrics(s);
   openModal(`
     <h2>${s.name}</h2>
     <p style="color:var(--text-dim);font-size:13px;margin-bottom:14px;">${fmtDate(s.date)} · ${s.duration} min</p>
-    <div class="grid grid-3" style="margin-bottom:16px;">
-      <div class="card stat-card"><span class="stat-label">Volume</span><span class="stat-value" style="font-size:18px;">${s.volume}kg</span></div>
+    <div class="grid grid-4" style="margin-bottom:16px;">
+      <div class="card stat-card"><span class="stat-label">Carga total</span><span class="stat-value" style="font-size:18px;">${metrics.totalLoad>0 ? WorkoutProgression.formatKg(metrics.totalLoad) : '0 kg'}</span></div>
+      <div class="card stat-card"><span class="stat-label">Repetições</span><span class="stat-value" style="font-size:18px;">${metrics.totalReps}</span></div>
+      <div class="card stat-card"><span class="stat-label">Volume</span><span class="stat-value" style="font-size:18px;">${WorkoutProgression.formatKg(metrics.trainingVolume)}</span></div>
       <div class="card stat-card"><span class="stat-label">Calorias</span><span class="stat-value" style="font-size:18px;">${s.calories}</span></div>
       <div class="card stat-card"><span class="stat-label">Duração</span><span class="stat-value" style="font-size:18px;">${s.duration}min</span></div>
     </div>
     ${s.exercisesLog.map(el=>{
       const e = findExercise(el.exerciseId);
+      const sets = validDisplaySets(el.sets);
+      const exMetrics = {
+        totalLoad: sets.reduce((sum,set)=>sum+(Number(set.weight)||0),0),
+        totalReps: sets.reduce((sum,set)=>sum+(Number(set.reps)||0),0),
+        trainingVolume: sets.reduce((sum,set)=>sum+((Number(set.weight)||0)*(Number(set.reps)||0)),0),
+      };
       return `<div class="list-row" style="display:block;">
         <div class="list-row-title" style="margin-bottom:6px;">${e?e.name:el.exerciseId}</div>
+        <div class="list-row-sub" style="margin-bottom:8px;">${exMetrics.totalLoad>0 ? WorkoutProgression.formatKg(exMetrics.totalLoad) + ' carga' : 'Peso corporal'} · ${exMetrics.totalReps} reps · ${WorkoutProgression.formatKg(exMetrics.trainingVolume)} volume</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          ${el.sets.map((st,i)=>`<span class="chip">Série ${i+1}: ${st.weight}kg × ${st.reps}</span>`).join('')}
+          ${(el.sets||[]).map((st,i)=>`<span class="chip">Série ${i+1}: ${setDisplayText(st)}</span>`).join('')}
         </div>
       </div>`;
     }).join('')}
@@ -2516,17 +2566,17 @@ function renderStats(){
       <div class="card" style="margin-bottom:20px;">
         <div class="grid grid-3">
           <div class="stat-card"><span class="stat-label">Treinos</span><span class="stat-value">${lw.count}</span></div>
-          <div class="stat-card"><span class="stat-label">Volume total</span><span class="stat-value">${lw.volume}kg</span></div>
-          <div class="stat-card"><span class="stat-label">Peso</span><span class="stat-value">${lw.weightStart&&lw.weightEnd?`${lw.weightEnd>lw.weightStart?'+':''}${(lw.weightEnd-lw.weightStart).toFixed(1)}kg`:'—'}</span></div>
+          <div class="stat-card"><span class="stat-label">Volume de treino</span><span class="stat-value">${WorkoutProgression.formatKg(lw.volume)}</span></div>
+          <div class="stat-card"><span class="stat-label">Peso</span><span class="stat-value">${lw.weightStart&&lw.weightEnd?`${lw.weightEnd>lw.weightStart?'+':''}${WorkoutProgression.formatKg(Math.abs(lw.weightEnd-lw.weightStart))}`:'—'}</span></div>
         </div>
       </div>
     `:''}
 
     <div class="grid grid-4" style="margin-bottom:10px;">
-      <div class="card stat-card"><span class="stat-label">Peso inicial</span><span class="stat-value">${state.user.startWeight||state.user.weight}kg</span></div>
+      <div class="card stat-card"><span class="stat-label">Peso inicial</span><span class="stat-value">${WorkoutProgression.formatKg(state.user.startWeight||state.user.weight)}</span></div>
       <div class="card stat-card"><span class="stat-label">Streak atual</span><span class="stat-value">🔥 ${computeStreak(state.completedDates)}</span></div>
       <div class="card stat-card"><span class="stat-label">Total treinado</span><span class="stat-value">${state.history.length}</span><span class="stat-sub">treinos</span></div>
-      <div class="card stat-card"><span class="stat-label">Maior carga</span><span class="stat-value">${maxLoad}kg</span></div>
+      <div class="card stat-card"><span class="stat-label">Maior carga</span><span class="stat-value">${WorkoutProgression.formatKg(maxLoad)}</span></div>
     </div>
 
     <div class="section-title">Treinos por semana (últimas 8 semanas)</div>
@@ -2538,10 +2588,10 @@ function renderStats(){
     <div class="section-title">Medidas corporais</div>
     <div class="card" id="measurementsCard"></div>
 
-    <div class="section-title">Carga levantada (últimas sessões)</div>
+    <div class="section-title">Volume de treino (últimas sessões)</div>
     <div class="card" id="chartVolume"></div>
 
-    <div class="section-title">Comparação mensal de volume</div>
+    <div class="section-title">Comparação mensal de volume de treino</div>
     <div class="card" id="chartMonthlyVolume"></div>
   `;
   renderBarChart(document.getElementById('chartWorkoutsWeek'), workoutsPerWeekData());
@@ -2570,7 +2620,7 @@ function monthlyVolumeData(){
 function openQuickWeightModal(){
   openModal(`
     <h2 style="margin-bottom:4px;">Registrar peso</h2>
-    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">Peso atual: ${state.user.weight}kg</p>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">Peso atual: ${WorkoutProgression.formatKg(state.user.weight)}</p>
     <div class="field" id="quickWeightField"><label>Novo peso (kg)</label><input type="number" step="0.1" id="quickWeightInput" value="${state.user.weight}" autofocus></div>
     <button class="btn btn-primary btn-block" id="quickWeightSave">Salvar</button>
   `);
@@ -2587,7 +2637,7 @@ function openQuickWeightModal(){
     state.user.weight = w;
     persist();
     closeModal();
-    showToast('Peso registrado', `${w}kg salvo no seu histórico.`, '⚖️');
+    showToast('Peso registrado', `${WorkoutProgression.formatKg(w)} salvo no seu histórico.`, '⚖️');
     renderStats();
   });
 }
@@ -3021,7 +3071,7 @@ function openPhotoDetail(photoId){
   openModal(`
     <img src="${photo.image}" alt="Foto de progresso — ${ANGLE_LABELS[photo.angle]}, ${fmtDate(photo.date)}" style="width:100%;border-radius:var(--radius);margin-bottom:14px;">
     <p style="font-size:13px;color:var(--text-dim);">${ANGLE_LABELS[photo.angle]}${photo.customLabel?' · '+photo.customLabel:''} · ${fmtDate(photo.date)}</p>
-    ${photo.weight?`<p style="font-size:13px;margin-top:6px;">Peso na época: <b>${photo.weight}kg</b></p>`:''}
+    ${photo.weight?`<p style="font-size:13px;margin-top:6px;">Peso na época: <b>${WorkoutProgression.formatKg(photo.weight)}</b></p>`:''}
     <div style="display:flex;gap:10px;margin-top:16px;">
       <button class="btn btn-ghost" id="hidePhotoBtn" style="flex:1;">${photo.hidden?'Reexibir':'Ocultar'}</button>
       <button class="btn btn-danger" id="deletePhotoBtn" style="flex:1;">Excluir</button>
@@ -3219,7 +3269,7 @@ function generateInsights(){
     const delta = recent[recent.length-1].weight - recent[0].weight;
     if(Math.abs(delta)>=0.3){
       const dir = delta<0 ? 'caiu' : 'subiu';
-      insights.push({text:`Seu peso ${dir} ${Math.abs(delta).toFixed(1)}kg no último mês.`, tone:'default'});
+      insights.push({text:`Seu peso ${dir} ${WorkoutProgression.formatKg(Math.abs(delta))} no último mês.`, tone:'default'});
     }
   }
 
