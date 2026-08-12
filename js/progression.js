@@ -6,7 +6,11 @@ const WorkoutProgression = (function(){
   const cache = new WeakMap();
 
   function doneSets(sets){
-    return (sets||[]).filter(s=>s && s.done && !s.skipped && Number(s.weight)>=0 && Number(s.reps)>0);
+    return (sets||[]).filter(s=>
+      s && s.done && !s.skipped &&
+      s.weight !== undefined && s.weight !== null && s.weight !== '' &&
+      Number(s.weight)>=0 && Number(s.reps)>0
+    );
   }
 
   function setVolume(set){
@@ -31,11 +35,13 @@ const WorkoutProgression = (function(){
 
   function sessionSetMetrics(sets){
     const validSets = doneSets(sets);
+    const totalLoad = validSets.reduce((sum,set)=>sum+(Number(set.weight)||0),0);
+    const totalReps = validSets.reduce((sum,set)=>sum+(Number(set.reps)||0),0);
     const volume = validSets.reduce((sum,set)=>sum+setVolume(set),0);
     const bestWeight = Math.max(0, ...validSets.map(set=>Number(set.weight)||0));
     const bestReps = Math.max(0, ...validSets.map(set=>Number(set.reps)||0));
     const bestOneRm = Math.max(0, ...validSets.map(estimatedOneRepMax));
-    return {validSets, volume, bestWeight, bestReps, bestOneRm};
+    return {validSets, totalLoad, totalReps, volume, bestWeight, bestReps, bestOneRm};
   }
 
   function stateCache(stateRef){
@@ -73,6 +79,9 @@ const WorkoutProgression = (function(){
           skipped: false,
           notes: set.notes || '',
         })),
+        totalLoad: metrics.totalLoad,
+        totalReps: metrics.totalReps,
+        trainingVolume: metrics.volume,
         volume: metrics.volume,
         bestWeight: metrics.bestWeight,
         bestReps: metrics.bestReps,
@@ -92,6 +101,9 @@ const WorkoutProgression = (function(){
           templateId: null,
           workoutName: 'Registro antigo',
           sets: [set],
+          totalLoad: weight,
+          totalReps: reps,
+          trainingVolume: setVolume(set),
           volume: setVolume(set),
           bestWeight: weight,
           bestReps: reps,
@@ -109,6 +121,8 @@ const WorkoutProgression = (function(){
   function getExerciseStats(stateRef, exerciseId){
     const sessions = getExerciseHistory(stateRef, exerciseId);
     const allSets = sessions.flatMap(session=>session.sets.map(set=>Object.assign({date:session.date}, set)));
+    const totalLoad = sessions.reduce((sum,session)=>sum+(session.totalLoad||0),0);
+    const totalReps = sessions.reduce((sum,session)=>sum+(session.totalReps||0),0);
     const totalVolume = sessions.reduce((sum,session)=>sum+session.volume,0);
     const bestWeightSet = allSets.reduce((best,set)=>(!best || set.weight>best.weight)?set:best, null);
     const bestRepsSet = allSets.reduce((best,set)=>(!best || set.reps>best.reps)?set:best, null);
@@ -120,6 +134,8 @@ const WorkoutProgression = (function(){
       bestWeight: bestWeightSet ? bestWeightSet.weight : 0,
       bestReps: bestRepsSet ? bestRepsSet.reps : 0,
       bestOneRm: bestOneRmSet ? estimatedOneRepMax(bestOneRmSet) : 0,
+      totalLoad,
+      totalReps,
       totalVolume,
       bestSessionVolume: bestSessionVolume ? bestSessionVolume.volume : 0,
       lastPerformance: sessions.length ? sessions[sessions.length-1] : null,
@@ -137,7 +153,7 @@ const WorkoutProgression = (function(){
       highestWeight && {type:'weight', label:'Maior carga', value:`${formatNumber(highestWeight.weight)} kg`, date:highestWeight.date},
       highestReps && {type:'reps', label:'Mais repetições', value:`${highestReps.reps} reps`, date:highestReps.date},
       highestOneRm && {type:'oneRm', label:'1RM estimado', value:`${formatNumber(estimatedOneRepMax(highestOneRm))} kg`, date:highestOneRm.date},
-      highestVolume && {type:'sessionVolume', label:'Maior volume', value:`${formatNumber(highestVolume.volume)} kg`, date:highestVolume.date},
+      highestVolume && {type:'sessionVolume', label:'Maior volume de sessão', value:`${formatNumber(highestVolume.volume)} kg`, date:highestVolume.date},
     ].filter(Boolean);
   }
 
@@ -177,7 +193,7 @@ const WorkoutProgression = (function(){
     return [
       compare('Carga', first.bestWeight, last.bestWeight, ' kg'),
       compare('1RM estimado', first.bestOneRm, last.bestOneRm, ' kg'),
-      compare('Volume', first.volume, last.volume, ' kg'),
+      compare('Volume de treino', first.trainingVolume||first.volume, last.trainingVolume||last.volume, ' kg'),
     ].filter(Boolean);
   }
 
@@ -298,6 +314,7 @@ const WorkoutProgression = (function(){
 
   function exerciseSummary(history, exerciseId, currentSets, beforeDate){
     const completed = doneSets(currentSets);
+    const totalLoad = completed.reduce((sum,set)=>sum+(Number(set.weight)||0),0);
     const currentVolume = completed.reduce((sum,set)=>sum+setVolume(set),0);
     const currentReps = completed.reduce((sum,set)=>sum+(Number(set.reps)||0),0);
     const previous = previousPerformance(history, exerciseId, beforeDate);
@@ -305,7 +322,9 @@ const WorkoutProgression = (function(){
     const deltaPct = previousVolume>0 ? ((currentVolume - previousVolume) / previousVolume) * 100 : null;
     return {
       setsCompleted: completed.length,
+      totalLoad,
       totalReps: currentReps,
+      trainingVolume: currentVolume,
       currentVolume,
       previousVolume,
       deltaPct,
@@ -314,6 +333,12 @@ const WorkoutProgression = (function(){
 
   function formatNumber(value){
     return Number(value||0).toLocaleString('pt-BR', {maximumFractionDigits:1});
+  }
+
+  function formatKg(value, zeroLabel){
+    const number = Number(value)||0;
+    if(number===0 && zeroLabel) return zeroLabel;
+    return `${formatNumber(number)} kg`;
   }
 
   return {
@@ -331,5 +356,6 @@ const WorkoutProgression = (function(){
     getExerciseProgress,
     getExerciseChartPoints,
     formatNumber,
+    formatKg,
   };
 })();
