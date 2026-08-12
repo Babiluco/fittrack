@@ -67,8 +67,8 @@ const Analytics = (function(){
           if(rm>max1RM){ max1RM=rm; max1RMDate=l.date; }
           if((l.reps||0)>maxReps){ maxReps=l.reps; maxRepsDate=l.date; }
         });
-        if(maxWeight>0) prs.push({type:'weight', exerciseId:exId, label:`Maior carga · ${name}`, value:`${maxWeight}kg`, date:maxWeightDate});
-        if(max1RM>0) prs.push({type:'1rm', exerciseId:exId, label:`Maior 1RM estimado · ${name}`, value:`${max1RM}kg`, date:max1RMDate});
+        if(maxWeight>0) prs.push({type:'weight', exerciseId:exId, label:`Maior carga · ${name}`, value:`${typeof WorkoutProgression!=='undefined' ? WorkoutProgression.formatKg(maxWeight) : maxWeight+' kg'}`, date:maxWeightDate});
+        if(max1RM>0) prs.push({type:'1rm', exerciseId:exId, label:`Maior 1RM estimado · ${name}`, value:`${typeof WorkoutProgression!=='undefined' ? WorkoutProgression.formatKg(max1RM) : max1RM+' kg'}`, date:max1RMDate});
         if(maxReps>0) prs.push({type:'reps', exerciseId:exId, label:`Mais repetições · ${name}`, value:`${maxReps} reps`, date:maxRepsDate});
       });
 
@@ -78,7 +78,7 @@ const Analytics = (function(){
         if(h.volume>maxVolume){ maxVolume=h.volume; maxVolumeDate=h.date; }
         if(h.duration>maxDuration){ maxDuration=h.duration; maxDurationDate=h.date; }
       });
-      if(maxVolume>0) prs.push({type:'volume', label:'Maior volume de treino', value:`${maxVolume}kg`, date:maxVolumeDate});
+      if(maxVolume>0) prs.push({type:'volume', label:'Maior volume de treino', value:`${typeof WorkoutProgression!=='undefined' ? WorkoutProgression.formatKg(maxVolume) : maxVolume+' kg'}`, date:maxVolumeDate});
       if(maxDuration>0) prs.push({type:'duration', label:'Treino mais longo', value:`${maxDuration} min`, date:maxDurationDate});
 
       // Mais treinos completados em uma semana
@@ -375,3 +375,4 @@ const Analytics = (function(){
     exerciseLogs,
   };
 })();
+
