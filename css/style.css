@@ -764,7 +764,71 @@ textarea:focus-visible,
 .bar-chart .bar-label{font-size:10px;color:var(--text-dim);font-weight:600;}
 
 /* Line sparkline */
-.line-chart-wrap{width:100%;overflow-x:auto;}
+.line-chart-wrap{width:100%;overflow:hidden;}
+.line-chart-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim);margin-top:4px;}
+
+/* Exercise history */
+.exercise-history{display:flex;flex-direction:column;gap:14px;}
+.exercise-history-header{display:flex;align-items:center;gap:14px;margin-bottom:2px;}
+.exercise-history-header h2{font-size:22px;line-height:1.15;margin:0 0 6px;}
+.exercise-history-icon{
+  width:62px;height:62px;border-radius:var(--radius);background:var(--bg-card);
+  border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;
+}
+.exercise-history-stats{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:4px 0 6px;
+}
+.exercise-history-stats div,.exercise-pr-card,.exercise-comparison-list div{
+  background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;min-width:0;
+}
+.exercise-history-stats span,.exercise-pr-card span,.exercise-comparison-list span{
+  display:block;font-size:10.5px;color:var(--text-faint);font-weight:800;text-transform:uppercase;margin-bottom:4px;
+}
+.exercise-history-stats b,.exercise-pr-card b,.exercise-comparison-list b{font-size:14px;line-height:1.3;word-break:break-word;}
+.exercise-current{display:flex;flex-direction:column;gap:4px;margin-bottom:2px;}
+.exercise-current span{font-size:11px;color:var(--text-faint);font-weight:800;text-transform:uppercase;}
+.exercise-current b{font-size:13.5px;}
+.exercise-pr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.exercise-pr-card small{display:block;color:var(--text-dim);font-size:11px;margin-top:4px;}
+.exercise-trend{
+  border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;background:var(--bg-card);
+}
+.exercise-trend b{display:block;font-size:15px;margin-bottom:4px;}
+.exercise-trend span{display:block;font-size:12.5px;color:var(--text-dim);line-height:1.45;}
+.exercise-trend.up{border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.07);}
+.exercise-trend.down{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.07);}
+.exercise-comparison-list{display:grid;grid-template-columns:1fr;gap:10px;}
+.exercise-comparison-list div{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 10px;}
+.exercise-comparison-list span{grid-column:1/-1;}
+.exercise-comparison-list strong{font-size:13px;color:var(--accent-text);white-space:nowrap;}
+.exercise-chart-controls{display:flex;flex-direction:column;gap:8px;}
+.exercise-chart-card{min-height:230px;padding:14px;margin-top:0;}
+.exercise-chart-card .line-chart-wrap svg{min-height:180px;}
+.exercise-session-list{display:flex;flex-direction:column;gap:10px;}
+.exercise-session{
+  background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;
+}
+.exercise-session summary{
+  min-height:54px;padding:12px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px;
+  list-style:none;
+}
+.exercise-session summary::-webkit-details-marker{display:none;}
+.exercise-session summary span{font-size:13px;font-weight:800;}
+.exercise-session summary b{font-size:12px;color:var(--text-dim);font-weight:700;text-align:right;}
+.exercise-session summary:focus-visible{outline:2px solid var(--accent-text);outline-offset:-2px;}
+.exercise-session-sets{
+  border-top:1px solid var(--border);padding:10px 14px 12px;display:flex;flex-direction:column;gap:6px;
+}
+.exercise-session-sets span{font-size:13px;font-weight:700;}
+.exercise-session-sets small{color:var(--text-faint);font-size:11.5px;}
+.empty-state.compact{padding:18px 12px;font-size:13px;}
+.empty-state.compact .emoji{font-size:26px;margin-bottom:6px;}
+@media (max-width:430px){
+  .exercise-history-stats,.exercise-pr-grid{grid-template-columns:1fr;}
+  .exercise-history-header h2{font-size:20px;}
+  .exercise-session summary{align-items:flex-start;flex-direction:column;gap:4px;}
+  .exercise-session summary b{text-align:left;}
+}
 
 /* Fade / slide in */
 .view-enter{animation:view-in .4s var(--ease);}
