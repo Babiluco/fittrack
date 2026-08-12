@@ -16,6 +16,32 @@ let authListenerReady = false;
 
 function persist(){ return saveState(state); }
 
+async function loadSupabaseProfile(){
+  if(!authUser || typeof PROFILE === 'undefined') return {ok:false, skipped:true};
+  const result = await PROFILE.load(authUser);
+  if(result.ok && result.profile){
+    state.user = PROFILE.applyRowToUser(state.user, result.profile);
+    persist();
+  }
+  return result;
+}
+
+async function saveSupabaseProfile(options){
+  if(!authUser || typeof PROFILE === 'undefined') return {ok:false, skipped:true};
+  const result = await PROFILE.save(authUser, state.user);
+  if(result.ok && result.profile){
+    state.user = PROFILE.applyRowToUser(state.user, result.profile);
+    persist();
+  } else if(!options?.silent && result.message){
+    showToast('Perfil local salvo', result.message, '⚠️');
+  }
+  return result;
+}
+
+function saveSupabaseProfileQuietly(){
+  saveSupabaseProfile({silent:true});
+}
+
 /* -------------------------------------------------------------------- */
 /* Treinos e Progresso: mescla os overrides salvos pelo usuário      */
 /* por cima dos templates padrão (data.js nunca é alterado em si)      */
@@ -66,6 +92,7 @@ async function boot(){
   authUser = session?.user || null;
   if(authUser){
     state = activateUserStorage(authUser);
+    await loadSupabaseProfile();
     applyTheme();
     renderAuthenticatedApp();
   } else {
@@ -93,7 +120,7 @@ function hideLoader(){
 function setupAuthStateListener(){
   if(authListenerReady || !CONFIG.FEATURES.AUTH || !SupabaseClient.isConfigured()) return;
   authListenerReady = true;
-  AUTH.onAuthStateChange((event, session)=>{
+  AUTH.onAuthStateChange(async (event, session)=>{
     authUser = session?.user || null;
     if(event==='PASSWORD_RECOVERY'){
       renderAuthScreen('reset');
@@ -102,6 +129,7 @@ function setupAuthStateListener(){
     if(event==='SIGNED_IN'){
       closeModal();
       state = activateUserStorage(session.user);
+      await loadSupabaseProfile();
       applyTheme();
       if(!authAppRendered) renderAuthenticatedApp();
       else if(currentView==='profile') renderProfile();
@@ -488,6 +516,7 @@ function renderNavLists(){
 function toggleTheme(){
   state.user.theme = state.user.theme==='light' ? 'dark' : 'light';
   persist();
+  saveSupabaseProfileQuietly();
   applyTheme();
   document.getElementById('themeToggle').innerHTML = `
     <span style="display:inline-flex;align-items:center;gap:8px;">${icon(state.user.theme==='light'?'sun':'moon',{size:16})}${state.user.theme==='light'?'Modo claro':'Modo escuro'}</span>
@@ -2927,6 +2956,7 @@ function openQuickWeightModal(){
     state.weightLog.push({date:todayKey(), weight:w});
     state.user.weight = w;
     persist();
+    saveSupabaseProfileQuietly();
     closeModal();
     showToast('Peso registrado', `${WorkoutProgression.formatKg(w)} salvo no seu histórico.`, '⚖️');
     renderStats();
@@ -3064,7 +3094,10 @@ function renderTabPerfil(){
       <button class="btn btn-primary btn-block" id="saveProfile">Salvar alterações</button>
     </div>
   `;
-  document.getElementById('saveProfile').addEventListener('click', ()=>{
+  document.getElementById('saveProfile').addEventListener('click', async ()=>{
+    const button = document.getElementById('saveProfile');
+    button.disabled = true;
+    button.textContent = 'Salvando...';
     const newWeight = Number(document.getElementById('pWeight').value)||u.weight;
     if(newWeight !== u.weight){
       state.weightLog.push({date:todayKey(), weight:newWeight});
@@ -3076,8 +3109,14 @@ function renderTabPerfil(){
     state.user.availableDays = Number(document.getElementById('pDays').value)||u.availableDays;
     state.user.avgWorkoutTime = Number(document.getElementById('pTime').value)||u.avgWorkoutTime;
     persist();
-    showToast('Perfil atualizado', 'Suas informações foram salvas.', '✅');
+    const remote = await saveSupabaseProfile();
+    if(remote.ok){
+      showToast('Perfil atualizado', 'Suas informações foram salvas no aparelho e no Supabase.', '✅');
+    } else if(remote.skipped){
+      showToast('Perfil atualizado', 'Suas informações foram salvas neste aparelho.', '✅');
+    }
     renderNavLists();
+    renderTabPerfil();
   });
 }
 
@@ -3289,7 +3328,11 @@ function wireBodyProgressEvents(){
     if(!hasAny){ showToast('Nada pra salvar', 'Preencha ao menos uma medida.', '⚠️'); return; }
     state.measurements = state.measurements||[];
     state.measurements.push(entry);
-    if(entry.weight){ state.weightLog.push({date:todayKey(), weight:entry.weight}); state.user.weight = entry.weight; }
+    if(entry.weight){
+      state.weightLog.push({date:todayKey(), weight:entry.weight});
+      state.user.weight = entry.weight;
+      saveSupabaseProfileQuietly();
+    }
     persist();
     showToast('Medidas registradas', 'Seu histórico corporal foi atualizado.', '📏');
     renderBodyProgress();
