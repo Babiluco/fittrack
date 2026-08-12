@@ -38,7 +38,7 @@ function renderLineChart(container, points, opts){
   const areaD = pathD + ` L${coords[coords.length-1][0].toFixed(1)},${h-pad} L${coords[0][0].toFixed(1)},${h-pad} Z`;
   container.innerHTML = `
     <div class="line-chart-wrap">
-    <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none">
+    <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" role="img" aria-label="${opts.ariaLabel||'Gráfico de linha'}">
       <defs>
         <linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="var(--blue)" stop-opacity="0.35"/>
@@ -49,7 +49,7 @@ function renderLineChart(container, points, opts){
       <path d="${pathD}" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
       ${coords.map(c=>`<circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="3.5" fill="var(--bg)" stroke="var(--blue)" stroke-width="2"></circle>`).join('')}
     </svg>
-    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim);margin-top:4px;">
+    <div class="line-chart-labels">
       <span>${points[0].label}</span><span>${points[points.length-1].label}</span>
     </div>
     </div>`;
