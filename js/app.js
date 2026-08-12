@@ -10,6 +10,9 @@ let exerciseFilter = 'todos';
 let exerciseSearch = '';
 let historyFilter = 'semana';
 let runnerCtx = null; // contexto ativo do treino em execução
+let authUser = null;
+let authAppRendered = false;
+let authListenerReady = false;
 
 function persist(){ return saveState(state); }
 
@@ -41,17 +44,298 @@ function allTemplateIds(includeRest){
 /* -------------------------------------------------------------------- */
 /* Boot                                                                  */
 /* -------------------------------------------------------------------- */
-function boot(){
+async function boot(){
   applyTheme();
+  setupKeyboardAccessibility();
+  setupAuthStateListener();
+
+  if(!CONFIG.FEATURES.AUTH){
+    renderAuthenticatedApp();
+    hideLoader();
+    return;
+  }
+
+  if(!SupabaseClient.isConfigured()){
+    renderAuthScreen('config');
+    hideLoader();
+    return;
+  }
+
+  const session = await AUTH.getSession();
+  authUser = session?.user || null;
+  if(authUser){
+    renderAuthenticatedApp();
+  } else {
+    renderAuthScreen(isPasswordRecoveryUrl() ? 'reset' : 'signin');
+  }
+  hideLoader();
+}
+
+function renderAuthenticatedApp(){
   renderShell();
   navigate('dashboard');
   maybeGenerateNotifications();
-  setupKeyboardAccessibility();
   checkForRecoverableSession();
+  authAppRendered = true;
+}
+
+function hideLoader(){
   setTimeout(()=>{
     const loader = document.getElementById('loader');
     if(loader){ loader.style.opacity='0'; setTimeout(()=>loader.remove(),400); }
   }, 500);
+}
+
+function setupAuthStateListener(){
+  if(authListenerReady || !CONFIG.FEATURES.AUTH || !SupabaseClient.isConfigured()) return;
+  authListenerReady = true;
+  AUTH.onAuthStateChange((event, session)=>{
+    authUser = session?.user || null;
+    if(event==='PASSWORD_RECOVERY'){
+      renderAuthScreen('reset');
+      return;
+    }
+    if(event==='SIGNED_IN'){
+      closeModal();
+      if(!authAppRendered) renderAuthenticatedApp();
+      else if(currentView==='profile') renderProfile();
+      return;
+    }
+    if(event==='SIGNED_OUT'){
+      authUser = null;
+      authAppRendered = false;
+      closeRunner();
+      renderAuthScreen('signin');
+      return;
+    }
+    if(event==='TOKEN_REFRESHED' && session){
+      authUser = session.user;
+    }
+  });
+}
+
+function isPasswordRecoveryUrl(){
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const query = new URLSearchParams(window.location.search);
+  return hash.get('type')==='recovery' || query.get('type')==='recovery';
+}
+
+/* ======================================================================
+   AUTENTICAÇÃO
+   ====================================================================== */
+function renderAuthScreen(mode, message){
+  mode = mode || 'signin';
+  const app = document.getElementById('app');
+  const titles = {
+    signin: ['Entrar no FitTrack', 'Acesse sua conta para continuar.'],
+    signup: ['Criar conta', 'Seus treinos locais continuam seguros neste aparelho.'],
+    forgot: ['Recuperar senha', 'Enviaremos um link para você definir uma nova senha.'],
+    reset: ['Nova senha', 'Defina uma nova senha para sua conta.'],
+    config: ['Configurar Supabase', 'Adicione a URL e a chave pública do projeto para ativar contas.'],
+  };
+  const [title, subtitle] = titles[mode] || titles.signin;
+  app.innerHTML = `
+    <main class="auth-page">
+      <section class="auth-panel">
+        <div class="auth-brand">
+          <img src="icons/icon-192.png" alt="" class="brand-mark">
+          <div>
+            <div class="brand-name">FitTrack</div>
+            <span>${CONFIG.VERSION}</span>
+          </div>
+        </div>
+        <div class="auth-copy">
+          <h1>${title}</h1>
+          <p>${subtitle}</p>
+        </div>
+        ${message ? `<div class="auth-message">${message}</div>` : ''}
+        ${authFormMarkup(mode)}
+      </section>
+      <div class="toast-wrap" id="toastWrap"></div>
+    </main>
+  `;
+  wireAuthForm(mode);
+}
+
+function authFormMarkup(mode){
+  if(mode==='config'){
+    return `
+      <div class="auth-note">
+        <b>Configuração necessária</b>
+        <span>Preencha <code>CONFIG.SUPABASE.URL</code> e <code>CONFIG.SUPABASE.PUBLISHABLE_KEY</code> em <code>js/config.js</code>. Use somente a chave pública/anon.</span>
+      </div>
+    `;
+  }
+  if(mode==='signup'){
+    return `
+      <form class="auth-form" id="authForm" novalidate>
+        ${authField('name','Nome','text','Seu nome')}
+        ${authField('email','Email','email','voce@email.com')}
+        ${authField('password','Senha','password','Mínimo de 6 caracteres')}
+        ${authField('confirmPassword','Confirmar senha','password','Repita sua senha')}
+        <button class="btn btn-primary btn-block" type="submit">Criar conta</button>
+        <button class="btn btn-ghost btn-block" type="button" data-auth-mode="signin">Já tenho conta</button>
+      </form>
+    `;
+  }
+  if(mode==='forgot'){
+    return `
+      <form class="auth-form" id="authForm" novalidate>
+        ${authField('email','Email','email','voce@email.com')}
+        <button class="btn btn-primary btn-block" type="submit">Enviar email de recuperação</button>
+        <button class="btn btn-ghost btn-block" type="button" data-auth-mode="signin">Voltar para entrar</button>
+      </form>
+    `;
+  }
+  if(mode==='reset'){
+    return `
+      <form class="auth-form" id="authForm" novalidate>
+        ${authField('password','Nova senha','password','Mínimo de 6 caracteres')}
+        ${authField('confirmPassword','Confirmar nova senha','password','Repita sua senha')}
+        <button class="btn btn-primary btn-block" type="submit">Atualizar senha</button>
+      </form>
+    `;
+  }
+  return `
+    <form class="auth-form" id="authForm" novalidate>
+      ${authField('email','Email','email','voce@email.com')}
+      ${authField('password','Senha','password','Sua senha')}
+      <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+      <button class="btn btn-ghost btn-block" type="button" data-auth-mode="signup">Criar conta</button>
+      <button class="auth-link" type="button" data-auth-mode="forgot">Esqueci minha senha</button>
+    </form>
+  `;
+}
+
+function authField(id, label, type, placeholder){
+  return `
+    <div class="field" id="${id}Field">
+      <label for="${id}Input">${label}</label>
+      <input id="${id}Input" type="${type}" placeholder="${placeholder}" autocomplete="${authAutocomplete(id, type)}">
+    </div>
+  `;
+}
+
+function authAutocomplete(id, type){
+  if(id==='name') return 'name';
+  if(id==='email') return 'email';
+  if(id==='confirmPassword') return 'new-password';
+  return type==='password' ? 'current-password' : 'off';
+}
+
+function wireAuthForm(mode){
+  document.querySelectorAll('[data-auth-mode]').forEach(btn=>{
+    btn.addEventListener('click', ()=>renderAuthScreen(btn.dataset.authMode));
+  });
+  const form = document.getElementById('authForm');
+  if(!form) return;
+  form.addEventListener('submit', async (event)=>{
+    event.preventDefault();
+    clearAuthErrors(form);
+    setAuthBusy(form, true);
+    try{
+      if(mode==='signin') await submitSignIn(form);
+      if(mode==='signup') await submitSignUp(form);
+      if(mode==='forgot') await submitForgotPassword(form);
+      if(mode==='reset') await submitNewPassword(form);
+    } finally {
+      setAuthBusy(form, false);
+    }
+  });
+}
+
+function authValue(id){
+  return document.getElementById(id+'Input')?.value.trim() || '';
+}
+
+function clearAuthErrors(root){
+  root.querySelectorAll('.field.invalid').forEach(field=>field.classList.remove('invalid'));
+  root.querySelectorAll('.field-error').forEach(el=>el.remove());
+}
+
+function setAuthError(id, message){
+  const field = document.getElementById(id+'Field');
+  if(!field) return;
+  field.classList.add('invalid');
+  field.insertAdjacentHTML('beforeend', `<span class="field-error">${message}</span>`);
+}
+
+function setAuthBusy(form, busy){
+  form.querySelectorAll('button,input').forEach(el=>el.disabled = busy);
+}
+
+function validateEmailField(){
+  const email = authValue('email');
+  if(!AUTH.isValidEmail(email)){
+    setAuthError('email','Informe um email válido.');
+    return null;
+  }
+  return email;
+}
+
+function validatePasswordFields(requireConfirm){
+  const password = authValue('password');
+  const passwordError = AUTH.validatePassword(password);
+  if(passwordError){
+    setAuthError('password', passwordError);
+    return null;
+  }
+  if(requireConfirm && password !== authValue('confirmPassword')){
+    setAuthError('confirmPassword','As senhas precisam ser iguais.');
+    return null;
+  }
+  return password;
+}
+
+async function submitSignIn(){
+  const email = validateEmailField();
+  const password = validatePasswordFields(false);
+  if(!email || !password) return;
+  const result = await AUTH.signIn({email, password});
+  if(!result.ok){
+    setAuthError('password', result.message || 'Email ou senha incorretos.');
+    return;
+  }
+}
+
+async function submitSignUp(){
+  const name = authValue('name');
+  if(!name) setAuthError('name','Informe seu nome.');
+  const email = validateEmailField();
+  const password = validatePasswordFields(true);
+  if(!name || !email || !password) return;
+  const result = await AUTH.signUp({name, email, password});
+  if(!result.ok){
+    setAuthError('email', result.message || 'Não foi possível criar a conta.');
+    return;
+  }
+  if(result.needsEmailConfirmation){
+    renderAuthScreen('signin','Conta criada! Verifique seu email para confirmar sua conta.');
+  }
+}
+
+async function submitForgotPassword(){
+  const email = validateEmailField();
+  if(!email) return;
+  const result = await AUTH.resetPassword(email);
+  if(!result.ok){
+    setAuthError('email', result.message || 'Não foi possível enviar o email.');
+    return;
+  }
+  renderAuthScreen('signin','Se esse email estiver cadastrado, você receberá um link para redefinir a senha.');
+}
+
+async function submitNewPassword(){
+  const password = validatePasswordFields(true);
+  if(!password) return;
+  const result = await AUTH.updatePassword(password);
+  if(!result.ok){
+    setAuthError('password', result.message || 'Não foi possível atualizar a senha.');
+    return;
+  }
+  history.replaceState(null, '', window.location.pathname);
+  await AUTH.signOut();
+  renderAuthScreen('signin','Senha atualizada. Entre novamente para continuar.');
 }
 
 /* ======================================================================
@@ -3328,6 +3612,18 @@ function renderTabConfig(){
   const c = document.getElementById('profileTabContent');
   c.innerHTML = `
     <div class="card" style="margin-bottom:14px;">
+      <h4 style="margin-bottom:10px;font-size:13px;">Conta FitTrack</h4>
+      <div class="list-row" style="padding:0;border:0;background:transparent;margin-bottom:12px;">
+        <div class="list-row-icon">👤</div>
+        <div class="list-row-body">
+          <div class="list-row-title">${escapeHtml(authUser?.user_metadata?.name || state.user.name || 'Usuária FitTrack')}</div>
+          <div class="list-row-sub">${escapeHtml(authUser?.email || 'Sessão Supabase ativa')}</div>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-block" id="logoutBtn">Sair da conta</button>
+      <p style="font-size:11.5px;color:var(--text-faint);line-height:1.5;margin-top:8px;">Sair encerra a sessão, mas mantém seus treinos, medidas e histórico salvos neste aparelho.</p>
+    </div>
+    <div class="card" style="margin-bottom:14px;">
       <div class="theme-toggle" id="cfgThemeToggle" style="cursor:pointer;">
         <span style="display:inline-flex;align-items:center;gap:8px;">${icon(state.user.theme==='light'?'sun':'moon',{size:16})}${state.user.theme==='light'?'Modo claro':'Modo escuro'}</span><div class="switch"></div>
       </div>
@@ -3347,6 +3643,10 @@ function renderTabConfig(){
       <button class="btn btn-danger btn-block" id="clearDataBtn">Limpar todos os dados</button>
     </div>
   `;
+  document.getElementById('logoutBtn').addEventListener('click', async ()=>{
+    const result = await AUTH.signOut();
+    if(!result.ok) showToast('Não foi possível sair', result.message || 'Tente novamente.', '⚠️');
+  });
   document.getElementById('cfgThemeToggle').addEventListener('click', ()=>{ toggleTheme(); renderTabConfig(); });
   document.getElementById('exportBtn').addEventListener('click', ()=>{
     const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
@@ -3436,3 +3736,4 @@ function closeModal(){
    ====================================================================== */
 
 document.addEventListener('DOMContentLoaded', boot);
+
