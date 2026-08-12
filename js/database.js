@@ -4,10 +4,8 @@
    Responsabilidade: ser o único ponto de leitura/escrita de dados do app,
    com nomes de método que descrevem a AÇÃO (saveWorkout, loadProfile...),
    não a tecnologia por trás. Hoje por baixo dos panos ainda é tudo
-   `state` + `persist()` (ver storage.js) — funcional de verdade, não é
-   simulação. O objetivo é que, no futuro, só esse arquivo precise mudar
-   pra trocar o localStorage por um backend real (ex: Supabase); as telas
-   não vão precisar saber a diferença.
+   `state` + `persist()` (ver storage.js) como base local. Alguns fluxos ja
+   podem acionar Supabase depois que o dado local fica salvo.
 
    IMPORTANTE: nesta primeira etapa o resto do app (app.js) continua
    também podendo usar `state`/`persist()` direto, como sempre fez — nada
@@ -19,8 +17,23 @@
 const DB = {
   /* ---- Treinos (sessões concluídas) -------------------------------- */
   saveWorkout(session){
+    if(!session) return null;
+    if(typeof SYNC !== 'undefined' && typeof SYNC.prepareWorkoutForSync === 'function'){
+      SYNC.prepareWorkoutForSync(session);
+    }
     state.history.push(session);
-    persist();
+    const ok = persist();
+    if(!ok) return null;
+    if(typeof SYNC !== 'undefined' && typeof SYNC.syncWorkout === 'function'){
+      SYNC.syncWorkout(session).then(result=>{
+        if(result && result.syncedAt){
+          session.syncedAt = result.syncedAt;
+          persist();
+        }
+      }).catch(error=>{
+        console.error('[FitTrack DB] syncWorkout', error);
+      });
+    }
     return session;
   },
   deleteWorkout(sessionId){
