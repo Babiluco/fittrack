@@ -3,7 +3,7 @@
    Estrutura em "componentes": cada render* monta um pedaço da UI.
    ========================================================================== */
 
-let state = loadState();
+let state = defaultState();
 let currentView = 'dashboard';
 let currentProfileTab = 'perfil';
 let exerciseFilter = 'todos';
@@ -50,6 +50,7 @@ async function boot(){
   setupAuthStateListener();
 
   if(!CONFIG.FEATURES.AUTH){
+    state = activateUserStorage(null);
     renderAuthenticatedApp();
     hideLoader();
     return;
@@ -64,8 +65,11 @@ async function boot(){
   const session = await AUTH.getSession();
   authUser = session?.user || null;
   if(authUser){
+    state = activateUserStorage(authUser);
+    applyTheme();
     renderAuthenticatedApp();
   } else {
+    state = defaultState();
     renderAuthScreen(isPasswordRecoveryUrl() ? 'reset' : 'signin');
   }
   hideLoader();
@@ -97,6 +101,8 @@ function setupAuthStateListener(){
     }
     if(event==='SIGNED_IN'){
       closeModal();
+      state = activateUserStorage(session.user);
+      applyTheme();
       if(!authAppRendered) renderAuthenticatedApp();
       else if(currentView==='profile') renderProfile();
       return;
@@ -105,6 +111,7 @@ function setupAuthStateListener(){
       authUser = null;
       authAppRendered = false;
       closeRunner();
+      state = defaultState();
       renderAuthScreen('signin');
       return;
     }
@@ -3663,7 +3670,7 @@ function renderTabConfig(){
     reader.onload = ()=>{
       try{
         const imported = JSON.parse(reader.result);
-        state = Object.assign(defaultState(), imported);
+        state = Object.assign(defaultState(authUser), imported);
         persist();
         applyTheme();
         showToast('Importado', 'Seus dados foram restaurados.', '✅');
@@ -3676,8 +3683,8 @@ function renderTabConfig(){
   });
   document.getElementById('clearDataBtn').addEventListener('click', ()=>{
     if(confirm('Tem certeza? Todos os seus dados serão apagados permanentemente.')){
-      localStorage.removeItem(STORAGE_KEY);
-      state = defaultState();
+      localStorage.removeItem(getStorageKey());
+      state = defaultState(authUser);
       persist();
       applyTheme();
       showToast('Dados apagados', 'Começando do zero.', '🗑️');
@@ -3736,4 +3743,3 @@ function closeModal(){
    ====================================================================== */
 
 document.addEventListener('DOMContentLoaded', boot);
-
