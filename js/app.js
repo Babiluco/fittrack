@@ -2276,7 +2276,10 @@ function finishWorkout(){
   const calories = Math.round(volume*0.05 + durationMin*4);
   const session = {
     id:cryptoId(), templateId:runnerCtx.templateId, name:tpl.name,
-    date: runnerCtx.dateKey, duration:durationMin, volume, calories, exercisesLog,
+    date: runnerCtx.dateKey,
+    startedAt: new Date(runnerCtx.startTime).toISOString(),
+    completedAt: new Date().toISOString(),
+    duration:durationMin, volume, calories, exercisesLog,
   };
 
   // -------------------------------------------------------------------
@@ -2294,7 +2297,6 @@ function finishWorkout(){
     fullWeeksCompleted: state.fullWeeksCompleted,
   };
 
-  state.history.push(session);
   state.completedDates[runnerCtx.dateKey] = runnerCtx.templateId;
 
   // registra evolução de carga por exercício + verifica recorde
@@ -2321,7 +2323,7 @@ function finishWorkout(){
 
   state.activeWorkoutSession = null; // só vale se o persist() abaixo funcionar
 
-  const ok = persist();
+  const ok = !!DB.saveWorkout(session);
   if(!ok){
     // desfaz tudo — o treino continua ativo e recuperável, nada se perde
     state.history.length = rollback.historyLength;
