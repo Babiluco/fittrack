@@ -1,0 +1,3331 @@
+/* ==========================================================================
+   FitTrack — Aplicação principal
+   Estrutura em "componentes": cada render* monta um pedaço da UI.
+   ========================================================================== */
+
+let state = loadState();
+let currentView = 'dashboard';
+let currentProfileTab = 'perfil';
+let exerciseFilter = 'todos';
+let exerciseSearch = '';
+let historyFilter = 'semana';
+let runnerCtx = null; // contexto ativo do treino em execução
+
+function persist(){ return saveState(state); }
+
+/* -------------------------------------------------------------------- */
+/* Treinos e Progresso: mescla os overrides salvos pelo usuário      */
+/* por cima dos templates padrão (data.js nunca é alterado em si)      */
+/* -------------------------------------------------------------------- */
+function getTemplate(id){
+  if(state.customTemplates && state.customTemplates[id]) return state.customTemplates[id];
+  const base = WORKOUT_TEMPLATES[id];
+  if(!base) return base;
+  const override = state.templateOverrides && state.templateOverrides[id];
+  if(!override) return base;
+  return Object.assign({}, base, override.exercises ? {exercises: override.exercises} : {});
+}
+
+function isCustomTemplate(id){
+  return !!(state.customTemplates && state.customTemplates[id]);
+}
+
+/* Todos os treinos disponíveis: fixos (data.js) + criados pelo usuário.
+   includeRest=true também inclui a opção "Descanso" (usada no cronograma). */
+function allTemplateIds(includeRest){
+  const builtins = Object.keys(WORKOUT_TEMPLATES).filter(id=>includeRest || id!=='descanso');
+  const custom = Object.keys(state.customTemplates||{});
+  return builtins.concat(custom);
+}
+
+/* -------------------------------------------------------------------- */
+/* Boot                                                                  */
+/* -------------------------------------------------------------------- */
+function boot(){
+  applyTheme();
+  renderShell();
+  navigate('dashboard');
+  maybeGenerateNotifications();
+  setupKeyboardAccessibility();
+  checkForRecoverableSession();
+  setTimeout(()=>{
+    const loader = document.getElementById('loader');
+    if(loader){ loader.style.opacity='0'; setTimeout(()=>loader.remove(),400); }
+  }, 500);
+}
+
+/* ======================================================================
+   RECUPERAÇÃO DE TREINO EM ANDAMENTO
+   ====================================================================== */
+function checkForRecoverableSession(){
+  const s = state.activeWorkoutSession;
+  if(!isValidActiveSession(s)) return;
+  const tpl = getTemplate(s.templateId);
+  const doneSets = s.sets.reduce((a,ex)=>a+ex.filter(x=>x.done).length,0);
+  const totalSets = s.sets.reduce((a,ex)=>a+ex.length,0);
+  const startedDate = new Date(s.startedAt);
+  openModal(`
+    <h2 style="margin-bottom:6px;">Você tem um treino em andamento</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">${tpl.name} · iniciado ${fmtDate(todayKey(startedDate))} às ${String(startedDate.getHours()).padStart(2,'0')}:${String(startedDate.getMinutes()).padStart(2,'0')}</p>
+    <div class="progress-track" style="margin-bottom:8px;"><div class="progress-fill" style="width:${totalSets?Math.round(doneSets/totalSets*100):0}%;"></div></div>
+    <p style="font-size:12.5px;color:var(--text-dim);margin-bottom:18px;">${doneSets} de ${totalSets} séries concluídas</p>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-ghost" id="discardSessionBtn" style="flex:1;">Descartar</button>
+      <button class="btn btn-primary" id="resumeSessionBtn" style="flex:1;">Continuar treino</button>
+    </div>
+  `);
+  document.getElementById('discardSessionBtn').addEventListener('click', ()=>{
+    discardActiveSession();
+    closeModal();
+    showToast('Treino descartado', 'Você pode começar um novo quando quiser.', '🗑️');
+  });
+  document.getElementById('resumeSessionBtn').addEventListener('click', ()=>{
+    closeModal();
+    resumeActiveSession(s);
+  });
+}
+
+function resumeActiveSession(s){
+  runnerCtx = {
+    id: s.id, templateId: s.templateId, dateKey: s.dateKey, mood: s.mood,
+    exIndex: s.exIndex, startTime: s.startedAt,
+    lastCompleted: s.lastCompleted, restState: s.restState,
+    sets: s.sets,
+  };
+  let el = document.getElementById('runnerRoot');
+  if(!el){ el = document.createElement('div'); el.id='runnerRoot'; document.body.appendChild(el); }
+  el.innerHTML = `<div class="runner" id="runnerEl"></div>`;
+  requestAnimationFrame(()=>document.getElementById('runnerEl').classList.add('open'));
+  renderRunnerExercise();
+  startRunnerClock();
+
+  if(runnerCtx.restState){
+    const remaining = Math.round((runnerCtx.restState.endsAt-Date.now())/1000);
+    if(runnerCtx.restState.paused){
+      // estava pausado — reabre já pausado, sem deixar o tempo correr
+      startRestOverlay(runnerCtx.restState.pausedRemaining, Date.now()+runnerCtx.restState.pausedRemaining*1000);
+      document.getElementById('restPauseBtn')?.click();
+    } else if(remaining>0){
+      startRestOverlay(remaining, runnerCtx.restState.endsAt);
+    } else {
+      runnerCtx.restState = null;
+      persistRunnerSession();
+      showToast('Descanso já tinha terminado', 'Hora de voltar para a próxima série!', '⏱');
+    }
+  }
+  showToast('Treino retomado', 'Continuando de onde você parou.', '▶️');
+}
+
+/* ======================================================================
+   ACESSIBILIDADE — torna "divs clicáveis" operáveis por teclado
+   ======================================================================
+   O app usa vários cards/linhas com onclick em vez de <button> (cards de
+   dia da agenda, atalhos do Home, resultados de busca de exercício etc).
+   Em vez de reescrever cada tela pra usar <button>, esta função varre o
+   conteúdo recém-renderizado, dá tabindex+role="button" pra esses
+   elementos, e o listener global abaixo faz Enter/Espaço funcionar como
+   clique — chamado uma vez, cobre o app inteiro. */
+const CLICKABLE_DIV_SELECTOR = '[data-nav],[data-day],[data-daydetail],[data-addex],[data-mood],[data-tpl],[data-goal],[data-session],[data-toggle],.theme-toggle,.card.interactive';
+
+function makeInteractiveElementsAccessible(root){
+  (root||document).querySelectorAll(CLICKABLE_DIV_SELECTOR).forEach(el=>{
+    const tag = el.tagName.toLowerCase();
+    if(tag==='button'||tag==='a'||tag==='input'||tag==='select'||tag==='textarea') return;
+    if(!el.hasAttribute('tabindex')) el.setAttribute('tabindex','0');
+    if(!el.hasAttribute('role')) el.setAttribute('role','button');
+  });
+}
+
+function setupKeyboardAccessibility(){
+  document.addEventListener('keydown', (e)=>{
+    if(e.key!=='Enter' && e.key!==' ') return;
+    const el = e.target;
+    if(el && el.getAttribute && el.getAttribute('role')==='button' && el.tagName!=='BUTTON'){
+      e.preventDefault();
+      el.click();
+    }
+  });
+}
+
+function applyTheme(){
+  document.body.classList.toggle('light', state.user.theme==='light');
+}
+
+/* -------------------------------------------------------------------- */
+/* Shell: sidebar + mobile nav                                          */
+/* -------------------------------------------------------------------- */
+const NAV_ITEMS = [
+  {id:'dashboard', label:'Início', icon:'home'},
+  {id:'treino', label:'Treino', icon:'dumbbell'},
+  {id:'progresso', label:'Progresso', icon:'trending-up'},
+  {id:'profile', label:'Perfil', icon:'user'},
+];
+
+function renderShell(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <aside class="sidebar">
+      <div class="brand"><img src="icons/icon-192.png" alt="" class="brand-mark"><div class="brand-name">FitTrack</div></div>
+      <nav class="nav" id="sidebarNav"></nav>
+      <div class="sidebar-footer">
+        <div class="theme-toggle" id="themeToggle" role="button">
+          <span style="display:inline-flex;align-items:center;gap:8px;">${icon(state.user.theme==='light'?'sun':'moon',{size:16})}${state.user.theme==='light'?'Modo claro':'Modo escuro'}</span>
+          <div class="switch"></div>
+        </div>
+      </div>
+    </aside>
+    <main class="view-wrap" id="viewWrap"></main>
+    <nav class="mobile-nav" id="mobileNav"></nav>
+    <div class="toast-wrap" id="toastWrap"></div>
+  `;
+  document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+  renderNavLists();
+}
+
+function renderNavLists(){
+  const html = NAV_ITEMS.map(n=>`
+    <button class="nav-item ${currentView===n.id?'active':''}" data-nav="${n.id}">
+      <span class="ico">${icon(n.icon)}</span><span class="lbl">${n.label}</span>
+    </button>`).join('');
+  document.getElementById('sidebarNav').innerHTML = html;
+  document.getElementById('mobileNav').innerHTML = html;
+  document.querySelectorAll('[data-nav]').forEach(btn=>{
+    btn.addEventListener('click', ()=>navigate(btn.dataset.nav));
+  });
+}
+
+function toggleTheme(){
+  state.user.theme = state.user.theme==='light' ? 'dark' : 'light';
+  persist();
+  applyTheme();
+  document.getElementById('themeToggle').innerHTML = `
+    <span style="display:inline-flex;align-items:center;gap:8px;">${icon(state.user.theme==='light'?'sun':'moon',{size:16})}${state.user.theme==='light'?'Modo claro':'Modo escuro'}</span>
+    <div class="switch"></div>`;
+}
+
+function navigate(view, subTab){
+  // rotas antigas (de antes da navegação ser reduzida) mapeadas pra dentro
+  // das novas sub-abas — assim nenhum link/atalho existente quebra
+  const legacyMap = {
+    agenda: {view:'treino', tab:'agenda'},
+    editor: {view:'treino', tab:'editor'},
+    exercises: {view:'treino', tab:'exercicios'},
+    history: {view:'progresso', tab:'historico'},
+    stats: {view:'progresso', tab:'geral'},
+  };
+  if(legacyMap[view]){
+    subTab = subTab || legacyMap[view].tab;
+    view = legacyMap[view].view;
+  }
+  if(view==='treino' && subTab) currentTreinoTab = subTab;
+  if(view==='progresso' && subTab) currentProgressoTab = subTab;
+  if(view==='profile' && subTab) currentProfileTab = subTab;
+
+  currentView = view;
+  renderNavLists();
+  const wrap = document.getElementById('viewWrap');
+  wrap.classList.remove('view-enter');
+  void wrap.offsetWidth;
+  wrap.classList.add('view-enter');
+  const renderers = {
+    dashboard: renderDashboard,
+    treino: renderTreino,
+    progresso: renderProgresso,
+    profile: renderProfile,
+  };
+  (renderers[view]||renderDashboard)();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+/* -------------------------------------------------------------------- */
+/* Toasts / notificações                                                */
+/* -------------------------------------------------------------------- */
+function showToast(title, message, emoji){
+  const wrap = document.getElementById('toastWrap');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<div style="font-size:18px;">${emoji||'🔔'}</div><div><b>${title}</b><span>${message}</span></div>`;
+  wrap.appendChild(el);
+  setTimeout(()=>{ el.style.transition='opacity .4s, transform .4s'; el.style.opacity='0'; el.style.transform='translateX(30px)'; setTimeout(()=>el.remove(),400); }, 4200);
+}
+
+function pushNotification(title, message, emoji){
+  state.notifications.unshift({id:cryptoId(), title, message, emoji, date:Date.now(), read:false});
+  state.notifications = state.notifications.slice(0,30);
+  persist();
+  showToast(title, message, emoji);
+}
+
+function maybeGenerateNotifications(){
+  const todayPlanId = state.weekPlan[new Date().getDay()];
+  const template = getTemplate(todayPlanId);
+  if(template && template.id!=='descanso' && !state.completedDates[todayKey()]){
+    showToast('Hora do treino!', `Hoje é dia de ${template.name}. Vamos lá?`, '⏰');
+  }
+  // dias sem treinar
+  const lastDate = Object.keys(state.completedDates).sort().pop();
+  if(lastDate){
+    const diffDays = Math.floor((Date.now()-new Date(lastDate+'T00:00:00').getTime())/86400000);
+    if(diffDays>=2){
+      showToast('Sentimos sua falta', `Você está há ${diffDays} dias sem treinar.`, '📉');
+    }
+  }
+}
+
+/* -------------------------------------------------------------------- */
+/* Confetti                                                             */
+/* -------------------------------------------------------------------- */
+function launchConfetti(){
+  const colors = ['#4F8EF7','#22C55E','#EF4444','#FFFFFF','#F5F5F5'];
+  for(let i=0;i<60;i++){
+    const piece = document.createElement('div');
+    piece.className='confetti-piece';
+    piece.style.left = Math.random()*100+'vw';
+    piece.style.background = colors[Math.floor(Math.random()*colors.length)];
+    piece.style.animationDuration = (2+Math.random()*1.6)+'s';
+    piece.style.opacity = String(0.7+Math.random()*0.3);
+    piece.style.transform = `rotate(${Math.random()*360}deg)`;
+    document.body.appendChild(piece);
+    setTimeout(()=>piece.remove(), 4000);
+  }
+}
+
+/* -------------------------------------------------------------------- */
+/* Helpers de dados                                                     */
+/* -------------------------------------------------------------------- */
+function weekProgress(){
+  const days = Object.keys(state.weekPlan).filter(d=>getTemplate(state.weekPlan[d]).id!=='descanso');
+  const total = days.length;
+  const start = startOfWeek(new Date());
+  let done = 0;
+  for(let i=0;i<7;i++){
+    const d = new Date(start); d.setDate(start.getDate()+i);
+    const key = todayKey(d);
+    const planId = state.weekPlan[d.getDay()];
+    if(getTemplate(planId) && getTemplate(planId).id!=='descanso' && state.completedDates[key]) done++;
+  }
+  return {done, total};
+}
+
+
+function nextWorkout(){
+  const d = new Date();
+  for(let i=0;i<7;i++){
+    const check = new Date(d); check.setDate(d.getDate()+i);
+    const planId = state.weekPlan[check.getDay()];
+    const tpl = getTemplate(planId);
+    if(tpl && tpl.id!=='descanso' && !state.completedDates[todayKey(check)]){
+      return {template:tpl, date:check, isToday:i===0};
+    }
+  }
+  return null;
+}
+
+/* Próximo treino agendado DEPOIS do que já aparece no card principal —
+   pra dar uma prévia do que vem a seguir, sem duplicar o que já é hero. */
+function upcomingAfterHero(nw){
+  const from = nw ? new Date(nw.date) : new Date();
+  for(let i=1;i<=7;i++){
+    const check = new Date(from); check.setDate(from.getDate()+i);
+    const planId = state.weekPlan[check.getDay()];
+    const tpl = getTemplate(planId);
+    if(tpl && tpl.id!=='descanso'){
+      return {template:tpl, date:check};
+    }
+  }
+  return null;
+}
+
+/* Estimativa de calorias pra um treino ainda não realizado, usando o mesmo
+   cálculo aplicado a sessões concluídas (volume*0.05 + minutos*4), só que
+   com o volume PLANEJADO do treino (séries×reps×carga) em vez do real. */
+function estimatedCalories(tpl){
+  const plannedVolume = tpl.exercises.reduce((sum,ex)=>sum + (ex.sets*ex.reps*(ex.load||0)), 0);
+  return Math.round(plannedVolume*0.05 + (tpl.estimatedTime||30)*4);
+}
+
+function lastLoadFor(exerciseId, beforeDate){
+  const logs = state.exerciseLoads[exerciseId]||[];
+  const prior = logs.filter(l=> !beforeDate || l.date < beforeDate);
+  if(prior.length===0) return null;
+  return prior[prior.length-1];
+}
+
+function bmi(){
+  const h = (state.user.height||170)/100;
+  return (state.user.weight/(h*h)).toFixed(1);
+}
+
+
+/* ======================================================================
+   VIEW: DASHBOARD
+   ====================================================================== */
+function renderDashboard(){
+  const wrap = document.getElementById('viewWrap');
+  const wp = weekProgress();
+  const streak = computeStreak(state.completedDates);
+  state.streakCache = streak;
+  const nw = nextWorkout();
+  const hour = new Date().getHours();
+  const greet = hour<12?'Bom dia':hour<18?'Boa tarde':'Boa noite';
+  const lastSession = [...state.history].sort((a,b)=>b.date.localeCompare(a.date))[0];
+  const lastAchievement = [...state.unlockedAchievements].reverse().map(id=>ACHIEVEMENTS.find(a=>a.id===id)).find(Boolean);
+  const nextAchievement = ACHIEVEMENTS.find(a=>!state.unlockedAchievements.includes(a.id));
+  const upcoming = upcomingAfterHero(nw);
+  const pr = Analytics.latestPR();
+  const lastWeight = [...(state.weightLog||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];
+  const goalsTotal = state.goals.length;
+  const goalsDone = state.goals.filter(g=>g.done).length;
+
+  wrap.innerHTML = `
+    <div class="view-header">
+      <div class="greeting">
+        <h1>${greet}, ${escapeHtml(state.user.name)} 👋</h1>
+        <p>Vamos continuar sua evolução hoje.</p>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="notifBtn" aria-label="Ver notificações">${icon('bell')}${state.notifications.some(n=>!n.read)?'<span class="badge-dot"></span>':''}</button>
+      </div>
+    </div>
+
+    <div class="card hero-card ${nw?'interactive':''}" id="nextWorkoutCard" ${nw?'style="cursor:pointer;"':''}>
+      ${nw ? `
+        <div class="hero-eyebrow">${nw.isToday?'Treino de hoje':WEEKDAY_NAMES[nw.date.getDay()]}</div>
+        <div style="display:flex;align-items:center;gap:16px;">
+          <div class="list-row-icon" style="width:56px;height:56px;font-size:24px;flex-shrink:0;">${MUSCLE_ICONS[nw.template.muscle]||'🏋️'}</div>
+          <div style="min-width:0;">
+            <div style="font-weight:800;font-size:19px;">${nw.template.name}</div>
+            <div class="hero-meta">
+              <span>⏱️ ${nw.template.estimatedTime} min</span>
+              <span>🏋️ ${nw.template.exercises.length} exercícios</span>
+              <span>🔥 ~${estimatedCalories(nw.template)} kcal</span>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary hero-cta" id="continueBtn">Começar treino</button>
+      ` : `<div class="empty-state"><span class="emoji">🎉</span>Você concluiu todos os treinos da semana! Aproveite pra descansar.</div>`}
+    </div>
+
+    <details class="dash-section">
+      <summary>
+        <span class="dash-section-title">Progresso</span>
+        <span class="dash-section-glance">🔥 ${streak} dia${streak===1?'':'s'} · ${wp.done}/${wp.total} essa semana</span>
+      </summary>
+      <div class="dash-section-body">
+        <div class="grid grid-3" style="margin-bottom:16px;">
+          <div class="card stat-card"><span class="stat-label">Sequência</span><span class="stat-value">🔥 ${streak}</span></div>
+          <div class="card stat-card"><span class="stat-label">Treinos/semana</span><span class="stat-value">${wp.done}<span style="font-size:13px;color:var(--text-dim);">/${wp.total}</span></span></div>
+          <div class="card stat-card"><span class="stat-label">Peso atual</span><span class="stat-value">${state.user.weight}<span style="font-size:13px;color:var(--text-dim);">kg</span></span></div>
+        </div>
+
+        <div class="section-title" style="margin-top:0;">Último recorde</div>
+        ${pr ? `
+          <div class="card mini-preview-row pr-celebration" style="margin-bottom:16px;">
+            <div class="list-row-icon" style="background:rgba(166,111,252,.15);">🏆</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:14px;">${pr.label}</div>
+              <div style="color:var(--text-dim);font-size:12.5px;">${pr.value}${pr.date?' · '+fmtDate(pr.date):''}</div>
+            </div>
+          </div>
+        ` : `<div class="empty-state" style="margin-bottom:16px;"><span class="emoji">🏋️</span>Seus recordes de carga aparecem aqui.</div>`}
+
+        <div class="section-title">Último peso registrado</div>
+        ${lastWeight ? `
+          <div class="card mini-preview-row" style="margin-bottom:16px;">
+            <div class="list-row-icon">⚖️</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:14px;">${lastWeight.weight}kg</div>
+              <div style="color:var(--text-dim);font-size:12.5px;">${fmtDate(lastWeight.date)}</div>
+            </div>
+          </div>
+        ` : `<div class="empty-state" style="margin-bottom:16px;"><span class="emoji">⚖️</span>Registre seu peso pra acompanhar aqui.</div>`}
+
+        <div class="section-title">Metas <span class="link" data-nav="profile" data-navtab="metas">ver todas</span></div>
+        <div class="progress-track" style="margin-bottom:10px;"><div class="progress-fill" style="width:${goalsTotal?Math.round(goalsDone/goalsTotal*100):0}%;"></div></div>
+        <p style="font-size:12.5px;color:var(--text-dim);margin-bottom:10px;">${goalsDone} de ${goalsTotal} metas concluídas</p>
+        <div id="miniGoals"></div>
+      </div>
+    </details>
+
+    <details class="dash-section">
+      <summary>
+        <span class="dash-section-title">Atividade</span>
+        <span class="dash-section-glance">${lastAchievement?lastAchievement.name:(lastSession?lastSession.name:'sem atividade ainda')}</span>
+      </summary>
+      <div class="dash-section-body">
+        <div class="section-title" style="margin-top:0;">Próximo treino agendado</div>
+        ${upcoming ? `
+          <div class="card mini-preview-row" style="margin-bottom:16px;">
+            <div class="list-row-icon">${MUSCLE_ICONS[upcoming.template.muscle]||'🏋️'}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:14px;">${upcoming.template.name}</div>
+              <div style="color:var(--text-dim);font-size:12.5px;">${WEEKDAY_NAMES[upcoming.date.getDay()]}</div>
+            </div>
+          </div>
+        ` : `<div class="empty-state" style="margin-bottom:16px;"><span class="emoji">📅</span>Nada mais agendado essa semana.</div>`}
+
+        <div class="section-title">Conquista recente <span class="link" data-nav="progresso" data-navtab="conquistas">ver todas</span></div>
+        ${lastAchievement ? `
+          <div class="card interactive mini-preview-row" data-nav="progresso" data-navtab="conquistas" style="cursor:pointer;margin-bottom:16px;">
+            <div class="list-row-icon" style="font-size:24px;">${lastAchievement.emoji}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:14px;">${lastAchievement.name}</div>
+              <div style="color:var(--text-dim);font-size:12.5px;">Desbloqueada · ${lastAchievement.desc}</div>
+            </div>
+          </div>
+        ` : nextAchievement ? `
+          <div class="card mini-preview-row" style="opacity:.65;margin-bottom:16px;">
+            <div class="list-row-icon" style="font-size:24px;filter:grayscale(1);">${nextAchievement.emoji}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:14px;">${nextAchievement.name}</div>
+              <div style="color:var(--text-dim);font-size:12.5px;">Próxima meta · ${nextAchievement.desc}</div>
+            </div>
+          </div>
+        ` : `<div class="empty-state" style="margin-bottom:16px;"><span class="emoji">🏆</span>Suas conquistas aparecem aqui.</div>`}
+
+        <div class="section-title">Atividade recente <span class="link" data-nav="history">ver tudo</span></div>
+        ${lastSession ? `
+          <div class="card interactive mini-preview-row" data-nav="history" style="cursor:pointer;">
+            <div class="list-row-icon">${MUSCLE_ICONS[getTemplate(lastSession.templateId)?.muscle]||'🏋️'}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:14px;">${lastSession.name}</div>
+              <div style="color:var(--text-dim);font-size:12.5px;">${fmtDate(lastSession.date)} · ${lastSession.duration} min · ${lastSession.volume}kg de volume</div>
+            </div>
+          </div>
+        ` : `<div class="empty-state"><span class="emoji">📋</span>Seu histórico de treinos aparece aqui.</div>`}
+      </div>
+    </details>
+  `;
+
+  renderMiniGoals();
+
+  document.getElementById('notifBtn').addEventListener('click', openNotifPanel);
+  if(nw){
+    document.getElementById('nextWorkoutCard').addEventListener('click', (e)=>{
+      if(e.target.id==='continueBtn') return;
+      startCheckinFlow(nw.template.id, todayKey(nw.date));
+    });
+    document.getElementById('continueBtn').addEventListener('click', (e)=>{
+      e.stopPropagation();
+      startCheckinFlow(nw.template.id, todayKey(nw.date));
+    });
+  }
+  wrap.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>navigate(el.dataset.nav, el.dataset.navtab)));
+  makeInteractiveElementsAccessible(wrap);
+}
+
+function renderMiniGoals(){
+  const el = document.getElementById('miniGoals');
+  if(!el) return;
+  const goals = state.goals.slice(0,3);
+  if(goals.length===0){ el.innerHTML = `<div class="empty-state"><span class="emoji">🎯</span>Nenhuma meta criada ainda.</div>`; return; }
+  el.innerHTML = goals.map(g=>`
+    <div class="list-row goal-row ${g.done?'done':''}" data-goal="${g.id}" style="cursor:pointer;">
+      <div class="goal-check">${g.done?'✓':''}</div>
+      <div class="list-row-body"><div class="list-row-title">${escapeHtml(g.text)}</div></div>
+    </div>`).join('');
+  el.querySelectorAll('[data-goal]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const g = state.goals.find(x=>x.id===row.dataset.goal);
+      g.done = !g.done;
+      persist();
+      renderMiniGoals();
+    });
+  });
+}
+
+/* ======================================================================
+   VIEW: AGENDA
+   ====================================================================== */
+/* ======================================================================
+   TREINO — agrupa Agenda, Editar Treinos e Exercícios em sub-abas
+   ====================================================================== */
+let currentTreinoTab = 'agenda';
+
+function renderTreino(){
+  agendaWeekOffset = 0;
+  calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const wrap = document.getElementById('viewWrap');
+  const tabs = [
+    {id:'agenda', label:'Agenda'},
+    {id:'calendario', label:'Calendário'},
+    {id:'editor', label:'Editar Treinos'},
+    {id:'exercicios', label:'Exercícios'},
+  ];
+  wrap.innerHTML = `
+    <div class="view-header"><div class="greeting"><h1>Treino</h1><p>Sua agenda, seus treinos e sua biblioteca de exercícios.</p></div></div>
+    <div class="tabs" id="treinoTabs">
+      ${tabs.map(t=>`<button class="tab-btn ${currentTreinoTab===t.id?'active':''}" data-treinotab="${t.id}">${t.label}</button>`).join('')}
+    </div>
+    <div id="treinoTabContent"></div>
+  `;
+  document.querySelectorAll('[data-treinotab]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ currentTreinoTab=btn.dataset.treinotab; renderTreino(); });
+  });
+  const renderers = {agenda: renderAgenda, calendario: renderCalendarView, editor: renderEditor, exercicios: renderExercises};
+  renderers[currentTreinoTab]();
+  makeInteractiveElementsAccessible(document.getElementById('treinoTabContent'));
+}
+
+/* ======================================================================
+   CALENDÁRIO — planejador mensal, heatmap e remarcação inteligente
+   (lógica de dados em calendar.js — aqui é só a tela)
+   ====================================================================== */
+let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+const CAL_STATUS_META = {
+  done:      {label:'Concluído', color:'var(--green)',  icon:'check'},
+  missed:    {label:'Perdido',   color:'var(--red)',    icon:'x'},
+  scheduled: {label:'Agendado',  color:'var(--blue)',    icon:'dumbbell'},
+  rest:      {label:'Descanso',  color:'var(--text-faint)', icon:'moon'},
+  cardio:    {label:'Cardio',    color:'var(--purple)', icon:'trending-up'},
+  mobility:  {label:'Mobilidade',color:'var(--purple)', icon:'check'},
+  custom:    {label:'Atividade', color:'var(--purple)', icon:'plus'},
+};
+
+function renderCalendarView(){
+  const wrap = document.getElementById('treinoTabContent');
+  const cons = Calendar.consistencyStats();
+  const missed = Calendar.missedWorkouts();
+  const suggestions = Calendar.smartSuggestions();
+  const recovery = Calendar.weekMuscleRecovery();
+  const year = calendarCursor.getFullYear(), month = calendarCursor.getMonth();
+  const monthLabel = calendarCursor.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  const grid = Calendar.monthGrid(year, month);
+  const hasAnyPlan = Object.values(state.weekPlan).some(id=>{ const t=getTemplate(id); return t && t.id!=='descanso'; }) || Object.keys(state.scheduleOverrides).length>0;
+
+  wrap.innerHTML = `
+    <div class="grid grid-4" style="margin-bottom:18px;">
+      <div class="card stat-card"><span class="stat-label">Sequência</span><span class="stat-value">🔥 ${cons.streak}</span></div>
+      <div class="card stat-card"><span class="stat-label">Maior sequência</span><span class="stat-value">${cons.best}</span></div>
+      <div class="card stat-card"><span class="stat-label">Semana</span><span class="stat-value">${cons.weekDone}<span style="font-size:12px;color:var(--text-dim);">/${cons.weekTotal}</span></span></div>
+      <div class="card stat-card"><span class="stat-label">Consistência do mês</span><span class="stat-value">${cons.monthPct}%</span></div>
+    </div>
+
+    ${missed.length ? `
+      <div class="analysis-banner warning" id="rescheduleBanner">
+        <div style="flex:1;">
+          ⚠️ Você perdeu o treino de <b>${WEEKDAY_NAMES[missed[0].date.getDay()]}</b> (${missed[0].plan.label}). Quer remarcar pra hoje?
+          <div style="display:flex;gap:10px;margin-top:10px;">
+            <button class="btn btn-primary btn-sm" id="rescheduleAcceptBtn">Remarcar pra hoje</button>
+            <button class="btn btn-ghost btn-sm" id="rescheduleDismissBtn">Dispensar</button>
+          </div>
+        </div>
+      </div>
+    ` : ''}
+
+    ${suggestions.length ? `
+      <div class="section-title" style="margin-top:0;">Sugestões</div>
+      <div style="margin-bottom:18px;">${suggestions.map(s=>`<div class="card insight-card">${s}</div>`).join('')}</div>
+    ` : ''}
+
+    ${recovery.some(r=>r.warning) ? `
+      <div class="section-title" style="margin-top:0;">Recuperação muscular</div>
+      <div class="card" style="margin-bottom:18px;">
+        ${recovery.map(r=>`<span class="chip ${r.warning?'':'active'}" style="${r.warning?'border-color:var(--red);color:var(--red);':''}margin:0 6px 6px 0;">${r.label} · ${r.days}x essa semana${r.warning?' ⚠️':''}</span>`).join('')}
+      </div>
+    ` : ''}
+
+    <div class="agenda-week-nav">
+      <button class="icon-btn" id="calPrevMonth" aria-label="Mês anterior">${icon('chevron-left')}</button>
+      <div class="agenda-week-label"><span style="text-transform:capitalize;">${monthLabel}</span></div>
+      <button class="icon-btn" id="calNextMonth" aria-label="Próximo mês">${icon('chevron-right')}</button>
+    </div>
+
+    ${hasAnyPlan ? `
+      <div class="cal-grid" id="calGrid" role="grid" aria-label="Calendário de treinos">
+        ${['D','S','T','Q','Q','S','S'].map(d=>`<div class="cal-weekday">${d}</div>`).join('')}
+        ${grid.map(cell=>{
+          if(!cell) return `<div class="cal-cell cal-empty"></div>`;
+          const meta = CAL_STATUS_META[cell.status];
+          const draggable = cell.status==='scheduled'||cell.status==='missed'||cell.status==='done';
+          return `<div class="cal-cell ${cell.isToday?'today':''} ${draggable?'cal-draggable':''}" data-datekey="${cell.dateKey}" tabindex="0" role="gridcell" aria-label="${cell.date.getDate()} - ${meta.label}${cell.isToday?' - hoje':''}">
+            <span class="cal-daynum">${cell.date.getDate()}</span>
+            <span class="cal-dot" style="background:${meta.color};" title="${meta.label}"></span>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="cal-legend">
+        ${Object.entries(CAL_STATUS_META).map(([k,m])=>`<span class="cal-legend-item"><span class="cal-dot" style="background:${m.color};"></span>${m.label}</span>`).join('')}
+      </div>
+    ` : `<div class="empty-state" style="margin-bottom:18px;"><span class="emoji">📅</span>Vamos planejar seu primeiro treino.<div style="margin-top:14px;"><button class="btn btn-primary" data-nav="treino" data-navtab="editor">Criar plano de treino</button></div></div>`}
+
+    <div class="section-title">Constância <span style="font-size:11px;color:var(--text-faint);font-weight:400;">(últimas 12 semanas)</span></div>
+    <div class="card" id="calHeatmap" style="overflow-x:auto;"></div>
+  `;
+
+  document.getElementById('calPrevMonth').addEventListener('click', ()=>{
+    calendarCursor = new Date(year, month-1, 1);
+    renderCalendarView();
+  });
+  document.getElementById('calNextMonth').addEventListener('click', ()=>{
+    calendarCursor = new Date(year, month+1, 1);
+    renderCalendarView();
+  });
+
+  const rescheduleAccept = document.getElementById('rescheduleAcceptBtn');
+  if(rescheduleAccept) rescheduleAccept.addEventListener('click', ()=>{
+    const m = missed[0];
+    Calendar.moveWorkout(m.dateKey, todayKey());
+    showToast('Treino remarcado', `${m.plan.label} movido para hoje.`, '📅');
+    renderCalendarView();
+  });
+  const rescheduleDismiss = document.getElementById('rescheduleDismissBtn');
+  if(rescheduleDismiss) rescheduleDismiss.addEventListener('click', ()=>{
+    state.rescheduleDismissed[missed[0].dateKey] = true;
+    persist();
+    renderCalendarView();
+  });
+
+  wrap.querySelectorAll('.cal-cell[data-datekey]').forEach(cell=>{
+    cell.addEventListener('click', ()=>openDayDetail(cell.dataset.datekey));
+    cell.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter' || e.key===' '){ e.preventDefault(); openDayDetail(cell.dataset.datekey); }
+    });
+    if(cell.classList.contains('cal-draggable')) attachCalendarDragHandlers(cell);
+  });
+  wrap.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>navigate(el.dataset.nav, el.dataset.navtab)));
+
+  renderCalendarHeatmap();
+}
+
+function renderCalendarHeatmap(){
+  const el = document.getElementById('calHeatmap');
+  if(!el) return;
+  const days = Calendar.heatmapData(12);
+  const levelColor = ['var(--border)','rgba(51,85,255,.35)','rgba(51,85,255,.65)','var(--blue)'];
+  const weeks = [];
+  for(let i=0;i<days.length;i+=7) weeks.push(days.slice(i,i+7));
+  el.innerHTML = `<div class="heatmap-grid">
+    ${weeks.map(week=>`<div class="heatmap-col">
+      ${week.map(d=>`<div class="heatmap-cell" style="background:${levelColor[d.level]};" title="${fmtDate(d.dateKey)} · ${d.volume}kg"></div>`).join('')}
+    </div>`).join('')}
+  </div>`;
+}
+
+function openDayDetail(dateKey){
+  const plan = Calendar.getDayPlan(dateKey);
+  const done = !!state.completedDates[dateKey];
+  const session = state.history.find(h=>h.date===dateKey);
+  const isPast = dateKey<todayKey();
+  const isFuture = dateKey>todayKey();
+
+  if(plan.type!=='workout'){
+    const meta = Calendar.DAY_TYPE_META[plan.type]||{label:plan.label};
+    openModal(`
+      <h2 style="margin-bottom:6px;">${fmtDate(dateKey)}</h2>
+      <p style="color:var(--text-dim);font-size:13px;">${meta.label}${plan.label && plan.label!==meta.label?': '+plan.label:''}</p>
+    `);
+    return;
+  }
+
+  const tpl = plan.tpl;
+  let bodyExtra = '';
+  if(session){
+    const prsThatDay = Analytics.detectPRs().filter(pr=>pr.date===dateKey);
+    bodyExtra = `
+      <div class="chip-row" style="margin:14px 0;">
+        <span class="chip active">✔ Concluído</span>
+        <span class="chip">${session.duration} min</span>
+        <span class="chip">${session.volume}kg volume</span>
+        <span class="chip">${session.calories} kcal</span>
+      </div>
+      ${prsThatDay.length?`<div class="card" style="margin-bottom:14px;"><div class="list-row-title">🏆 Recordes nesse dia</div>${prsThatDay.map(pr=>`<p style="font-size:12.5px;color:var(--text-dim);margin-top:4px;">${pr.label}: ${pr.value}</p>`).join('')}</div>`:''}
+    `;
+  } else if(isPast){
+    bodyExtra = `<div class="chip-row" style="margin:14px 0;"><span class="chip" style="color:var(--red);border-color:var(--red);">Não realizado</span></div>`;
+  }
+
+  openModal(`
+    <h2 style="margin-bottom:4px;">${tpl.name}</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:4px;">${fmtDate(dateKey)}</p>
+    <div class="chip-row" style="margin-bottom:16px;">
+      <span class="chip">⏱ ${tpl.estimatedTime} min</span>
+      <span class="chip">📋 ${tpl.exercises.length} exercícios</span>
+    </div>
+    ${bodyExtra}
+    <div>
+      ${tpl.exercises.map(ex=>{
+        const e = findExercise(ex.exerciseId);
+        return `<div class="list-row">
+          <div class="list-row-icon">${MUSCLE_ICONS[e.muscle]}</div>
+          <div class="list-row-body">
+            <div class="list-row-title">${e.name}</div>
+            <div class="list-row-sub">${ex.sets} séries × ${ex.reps} reps ${ex.load?`· ${ex.load}kg`:''}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    ${!done && !isFuture ? `<button class="btn btn-primary btn-block" style="margin-top:10px;" id="startFromDayDetail">Iniciar treino</button>` : ''}
+  `);
+  const startBtn = document.getElementById('startFromDayDetail');
+  if(startBtn) startBtn.addEventListener('click', ()=>{
+    closeModal();
+    startCheckinFlow(plan.templateId, dateKey);
+  });
+}
+
+/* Arrastar um dia de treino pra outra célula do calendário — Pointer
+   Events (mouse e touch), mesma técnica usada no editor de treinos. */
+let calDragCtx = null;
+
+function attachCalendarDragHandlers(cell){
+  cell.addEventListener('pointerdown', (ev)=>{
+    ev.preventDefault();
+    calDragCtx = {fromKey: cell.dataset.datekey, cell};
+    cell.classList.add('cal-dragging');
+    const onMove = (e)=>{
+      const target = document.elementFromPoint(e.clientX, e.clientY);
+      const dropCell = target && target.closest('.cal-cell[data-datekey]');
+      document.querySelectorAll('.cal-drop-target').forEach(c=>c.classList.remove('cal-drop-target'));
+      if(dropCell && dropCell!==cell) dropCell.classList.add('cal-drop-target');
+    };
+    const onUp = (e)=>{
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      cell.classList.remove('cal-dragging');
+      const target = document.elementFromPoint(e.clientX, e.clientY);
+      const dropCell = target && target.closest('.cal-cell[data-datekey]');
+      document.querySelectorAll('.cal-drop-target').forEach(c=>c.classList.remove('cal-drop-target'));
+      if(dropCell && dropCell!==cell && calDragCtx){
+        const moved = Calendar.moveWorkout(calDragCtx.fromKey, dropCell.dataset.datekey);
+        if(moved){ showToast('Treino movido', 'Cronograma atualizado.', '📅'); renderCalendarView(); }
+        else showToast('Não foi possível mover', 'Esse dia já tem um treino agendado.', '⚠️');
+      }
+      calDragCtx = null;
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  });
+}
+
+/* ======================================================================
+   AGENDA — cronograma semanal, com navegação entre semanas
+   ====================================================================== */
+let agendaWeekOffset = 0; // 0 = semana atual; -1 = anterior; +1 = próxima
+
+function renderAgenda(){
+  const wrap = document.getElementById('treinoTabContent');
+  const start = new Date(startOfWeek(new Date()).getTime() + agendaWeekOffset*7*86400000);
+  const end = new Date(start.getTime() + 6*86400000);
+  const isCurrentWeek = agendaWeekOffset===0;
+  const rangeLabel = `${start.getDate()} ${MONTH_SHORT[start.getMonth()]} – ${end.getDate()} ${MONTH_SHORT[end.getMonth()]}`;
+
+  let doneCount = 0, totalWorkoutDays = 0;
+  const days = [];
+  for(let i=0;i<7;i++){
+    const d = new Date(start); d.setDate(start.getDate()+i);
+    const key = todayKey(d);
+    const planId = state.weekPlan[d.getDay()];
+    const tpl = getTemplate(planId);
+    const isToday = key===todayKey();
+    const done = !!state.completedDates[key];
+    const isRest = tpl.id==='descanso';
+    if(!isRest){ totalWorkoutDays++; if(done) doneCount++; }
+    days.push({d, key, tpl, isToday, done, isRest});
+  }
+  const weekComplete = isCurrentWeek && totalWorkoutDays>0 && doneCount===totalWorkoutDays;
+
+  wrap.innerHTML = `
+    <div class="agenda-week-nav">
+      <button class="icon-btn" id="agendaPrevWeek" aria-label="Semana anterior">${icon('chevron-left')}</button>
+      <div class="agenda-week-label">
+        <span>${isCurrentWeek?'Esta semana':rangeLabel}</span>
+        ${isCurrentWeek?`<span class="agenda-week-sub">${rangeLabel}</span>`:''}
+      </div>
+      <button class="icon-btn" id="agendaNextWeek" aria-label="Próxima semana">${icon('chevron-right')}</button>
+    </div>
+
+    ${weekComplete?`<div class="agenda-complete-banner">${icon('check',{size:16})} Semana completa! Todos os treinos feitos.</div>`:''}
+
+    <div class="week-grid" id="agendaGrid"></div>
+    <div class="section-title">Próximos passos</div>
+    <div id="agendaList"></div>
+  `;
+
+  const grid = document.getElementById('agendaGrid');
+  const list = document.getElementById('agendaList');
+  let gridHtml='', listHtml='';
+
+  days.forEach(({d,key,tpl,isToday,done,isRest})=>{
+    gridHtml += `<div class="day-card ${isToday?'today':''} ${done?'done':''} ${isRest?'rest':''}" data-day="${d.getDay()}" data-weekoffset="${agendaWeekOffset}" ${isRest?'':'style="cursor:pointer;"'} ${isToday?'aria-label="Hoje"':''}>
+      <span class="day-name">${WEEKDAY_SHORT[d.getDay()]}</span>
+      <span class="day-status">${isRest?icon('moon',{size:15}):done?icon('check',{size:15}):''}</span>
+      <span class="day-workout">${isRest?'Descanso':tpl.name}</span>
+    </div>`;
+    listHtml += `<div class="list-row ${isRest?'list-row-muted':''}" data-daydetail="${d.getDay()}" data-weekoffset="${agendaWeekOffset}" ${isRest?'':'style="cursor:pointer;"'}>
+      <div class="list-row-icon">${isRest?icon('moon',{size:18}):MUSCLE_ICONS[tpl.muscle]||'🏋️'}</div>
+      <div class="list-row-body">
+        <div class="list-row-title">${WEEKDAY_NAMES[d.getDay()]}${isToday?' · Hoje':''} · ${tpl.name}</div>
+        <div class="list-row-sub">${isRest?'Dia de recuperação':`${tpl.estimatedTime} min · ${tpl.exercises.length} exercícios`}</div>
+      </div>
+      <div class="list-row-trail">${isRest?'':done?`<span class="done-badge">${icon('check',{size:13})} Feito</span>`:icon('chevron-right',{size:16})}</div>
+    </div>`;
+  });
+  grid.innerHTML = gridHtml;
+  list.innerHTML = listHtml;
+
+  document.querySelectorAll('[data-day],[data-daydetail]').forEach(elm=>{
+    elm.addEventListener('click', ()=>{
+      const day = elm.dataset.day || elm.dataset.daydetail;
+      const planId = state.weekPlan[day];
+      const tpl = getTemplate(planId);
+      if(tpl.id==='descanso') return;
+      const d = new Date(start); d.setDate(start.getDate() + ((Number(day)-start.getDay()+7)%7));
+      openWorkoutDetail(tpl.id, todayKey(d));
+    });
+  });
+  document.getElementById('agendaPrevWeek').addEventListener('click', ()=>{ agendaWeekOffset--; renderAgenda(); });
+  document.getElementById('agendaNextWeek').addEventListener('click', ()=>{ agendaWeekOffset++; renderAgenda(); });
+  makeInteractiveElementsAccessible(wrap);
+}
+
+/* ======================================================================
+   EDITOR DE TREINOS — trocar o treino de cada dia, ajustar exercícios,
+   criar exercícios novos e adicionar/remover exercícios de um treino
+   ====================================================================== */
+const SCHEDULE_DAY_ORDER = [1,2,3,4,5,6,0]; // Segunda ... Domingo
+
+function allExercises(){
+  return EXERCISE_LIBRARY.concat(state.customExercises||[]);
+}
+
+function renderEditor(){
+  const wrap = document.getElementById('treinoTabContent');
+  wrap.innerHTML = `
+    <div class="section-title">Cronograma da semana</div>
+    <div class="card" style="margin-bottom:20px;">
+      <div id="scheduleRows"></div>
+    </div>
+
+    <div class="section-title">Editar exercícios de um treino</div>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="field">
+        <label>Escolha o treino</label>
+        <select id="editorTemplateSelect"></select>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="duplicateTemplateBtn">📄 Duplicar este treino</button>
+        <button class="btn btn-ghost" id="renameTemplateBtn" style="display:none;">✏️ Renomear</button>
+        <button class="btn btn-ghost" id="deleteTemplateBtn" style="display:none;color:var(--red);">🗑️ Excluir treino</button>
+      </div>
+      <div id="editorExerciseList"></div>
+      <div class="section-title" style="margin-top:20px;">Adicionar exercício</div>
+      <div class="field"><input type="text" id="addExerciseSearch" placeholder="🔍 Pesquisar exercício..."></div>
+      <div id="addExerciseResults"></div>
+      <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="saveTemplateBtn">Salvar alterações</button>
+        <button class="btn btn-ghost" id="resetTemplateBtn">Restaurar padrão</button>
+      </div>
+    </div>
+
+    <div class="section-title">Criar exercício novo</div>
+    <div class="card">
+      <div class="field"><label>Nome</label><input type="text" id="newExName" placeholder="Ex: Stiff com halteres"></div>
+      <div class="field">
+        <label>Grupo muscular</label>
+        <select id="newExMuscle">
+          ${Object.keys(MUSCLE_ICONS).map(m=>`<option value="${m}">${MUSCLE_ICONS[m]} ${capitalize(m)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Descrição</label><input type="text" id="newExDesc" placeholder="Pra que serve esse exercício"></div>
+      <div class="field"><label>Como executar</label><input type="text" id="newExExec" placeholder="Passo a passo da execução"></div>
+      <div class="field"><label>Erros comuns (opcional)</label><input type="text" id="newExMistakes" placeholder="O que evitar"></div>
+      <button class="btn btn-primary btn-block" id="createExerciseBtn">Criar exercício</button>
+    </div>
+  `;
+  renderScheduleRows();
+  const templateSelect = document.getElementById('editorTemplateSelect');
+  populateTemplateSelect(templateSelect);
+  templateSelect.addEventListener('change', ()=>renderEditorExercises(templateSelect.value));
+  renderEditorExercises(templateSelect.value);
+
+  document.getElementById('saveTemplateBtn').addEventListener('click', ()=>saveTemplateEdits(templateSelect.value));
+  document.getElementById('resetTemplateBtn').addEventListener('click', ()=>resetTemplateEdits(templateSelect.value));
+  document.getElementById('addExerciseSearch').addEventListener('input', (e)=>{
+    renderAddExerciseSearch(templateSelect.value, e.target.value);
+  });
+  document.getElementById('createExerciseBtn').addEventListener('click', createCustomExercise);
+  document.getElementById('duplicateTemplateBtn').addEventListener('click', ()=>duplicateTemplate(templateSelect.value));
+  document.getElementById('renameTemplateBtn').addEventListener('click', ()=>renameCustomTemplate(templateSelect.value));
+  document.getElementById('deleteTemplateBtn').addEventListener('click', ()=>deleteCustomTemplate(templateSelect.value));
+}
+
+function populateTemplateSelect(selectEl, keepValue){
+  const ids = allTemplateIds(false);
+  selectEl.innerHTML = ids.map(id=>`<option value="${id}" ${id===keepValue?'selected':''}>${getTemplate(id).name}</option>`).join('');
+}
+
+function renderScheduleRows(){
+  const rows = document.getElementById('scheduleRows');
+  const ids = allTemplateIds(true);
+  rows.innerHTML = SCHEDULE_DAY_ORDER.map(day=>`
+    <div class="field" style="margin-bottom:12px;">
+      <label>${WEEKDAY_NAMES[day]}</label>
+      <select data-schedday="${day}">
+        ${ids.map(id=>`<option value="${id}" ${state.weekPlan[day]===id?'selected':''}>${getTemplate(id).name}</option>`).join('')}
+      </select>
+    </div>
+  `).join('');
+  rows.querySelectorAll('[data-schedday]').forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      state.weekPlan[Number(sel.dataset.schedday)] = sel.value;
+      persist();
+      showToast('Cronograma atualizado', `${WEEKDAY_NAMES[Number(sel.dataset.schedday)]} agora é ${getTemplate(sel.value).name}.`, '📅');
+    });
+  });
+}
+
+function renderEditorExercises(templateId){
+  const list = document.getElementById('editorExerciseList');
+  const tpl = getTemplate(templateId);
+  if(!tpl){ list.innerHTML=''; return; }
+  const custom = isCustomTemplate(templateId);
+  const hasOverride = !custom && !!(state.templateOverrides && state.templateOverrides[templateId]);
+  document.getElementById('renameTemplateBtn').style.display = custom ? '' : 'none';
+  document.getElementById('deleteTemplateBtn').style.display = custom ? '' : 'none';
+  document.getElementById('resetTemplateBtn').style.display = custom ? 'none' : '';
+  list.innerHTML = `
+    ${custom?'<div class="chip active" style="margin:14px 0 4px;">📄 Treino próprio</div>':''}
+    ${hasOverride?'<div class="chip active" style="margin:14px 0 4px;">✏️ Personalizado</div>':''}
+    ${tpl.exercises.length>1?'<p class="drag-hint">Arraste pelo ⠿ pra reordenar</p>':''}
+    ${tpl.exercises.map((ex,i)=>{
+      const e = findExercise(ex.exerciseId);
+      return `<div class="list-row draggable-row" style="align-items:flex-start;" data-exidx="${i}" data-exerciseid="${ex.exerciseId}">
+        <div class="drag-handle" aria-label="Reordenar">⠿</div>
+        <div class="list-row-icon">${MUSCLE_ICONS[e?.muscle]||'🏋️'}</div>
+        <div class="list-row-body">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <div class="list-row-title">${e?e.name:ex.exerciseId}</div>
+            <button class="icon-btn" data-remove-idx="${i}" title="Remover" aria-label="Remover exercício" style="flex-shrink:0;">${icon('trash-2',{size:16})}</button>
+          </div>
+          <div class="field-row" style="margin-top:10px;">
+            <div class="field" style="margin-bottom:0;"><label>Séries</label><input type="number" min="1" data-idx="${i}" data-key="sets" value="${ex.sets}"></div>
+            <div class="field" style="margin-bottom:0;"><label>Repetições</label><input type="number" min="1" data-idx="${i}" data-key="reps" value="${ex.reps}"></div>
+          </div>
+          <div class="field-row" style="margin-top:10px;">
+            <div class="field" style="margin-bottom:0;"><label>Carga (kg)</label><input type="number" min="0" step="0.5" data-idx="${i}" data-key="load" value="${ex.load}"></div>
+            <div class="field" style="margin-bottom:0;"><label>Descanso (seg)</label><input type="number" min="0" data-idx="${i}" data-key="rest" value="${ex.rest}"></div>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  `;
+  list.querySelectorAll('[data-remove-idx]').forEach(btn=>{
+    btn.addEventListener('click', ()=>removeExerciseFromTemplate(templateId, Number(btn.dataset.removeIdx)));
+  });
+  attachExerciseDragHandlers(list, templateId);
+  renderAddExerciseSearch(templateId, '');
+}
+
+/* ------------------------------------------------------------------ */
+/* Adicionar exercício — busca em vez de dropdown (estilo Notion):    */
+/* digitar filtra a lista, clicar num resultado já adiciona.          */
+/* ------------------------------------------------------------------ */
+function renderAddExerciseSearch(templateId, query){
+  const results = document.getElementById('addExerciseResults');
+  if(!results) return;
+  const tpl = getTemplate(templateId);
+  const inTemplateIds = tpl.exercises.map(ex=>ex.exerciseId);
+  const q = query.trim().toLowerCase();
+  const matches = allExercises()
+    .filter(e=>!inTemplateIds.includes(e.id))
+    .filter(e=>!q || e.name.toLowerCase().includes(q))
+    .slice(0, 8);
+  results.innerHTML = matches.length ? matches.map(e=>`
+    <div class="list-row add-exercise-row" data-addex="${e.id}" style="cursor:pointer;">
+      <div class="list-row-icon">${MUSCLE_ICONS[e.muscle]||'🏋️'}</div>
+      <div class="list-row-body">
+        <div class="list-row-title">${e.name}</div>
+        <div class="list-row-sub">${capitalize(e.muscle)}</div>
+      </div>
+      <div class="icon-btn" style="width:32px;height:32px;color:var(--accent);flex-shrink:0;">${icon('plus',{size:16})}</div>
+    </div>
+  `).join('') : `<div class="empty-state" style="padding:16px 0;"><span class="emoji">🔍</span>${q?'Nenhum exercício encontrado.':'Todos os exercícios já estão nesse treino.'}</div>`;
+  results.querySelectorAll('[data-addex]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      addExerciseToTemplate(templateId, row.dataset.addex);
+      const searchInput = document.getElementById('addExerciseSearch');
+      if(searchInput) searchInput.value = '';
+    });
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Reordenar exercícios com arrastar-e-soltar (mouse e touch, via      */
+/* Pointer Events — funciona igual em desktop e celular).             */
+/* ------------------------------------------------------------------ */
+let exerciseDragCtx = null;
+
+function attachExerciseDragHandlers(list, templateId){
+  list.querySelectorAll('.draggable-row').forEach(row=>{
+    const handle = row.querySelector('.drag-handle');
+    if(!handle) return;
+    handle.addEventListener('pointerdown', (ev)=>{
+      ev.preventDefault();
+      exerciseDragCtx = {templateId, row, list};
+      row.classList.add('dragging');
+      const onMove = (e)=>onExerciseDragMove(e);
+      const onUp = (e)=>{
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        onExerciseDragEnd();
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+  });
+}
+
+function onExerciseDragMove(e){
+  if(!exerciseDragCtx) return;
+  const {row, list} = exerciseDragCtx;
+  const siblings = Array.from(list.querySelectorAll('.draggable-row')).filter(el=>el!==row);
+  let inserted = false;
+  for(const sib of siblings){
+    const rect = sib.getBoundingClientRect();
+    if(e.clientY < rect.top + rect.height/2){
+      list.insertBefore(row, sib);
+      inserted = true;
+      break;
+    }
+  }
+  if(!inserted) list.appendChild(row);
+}
+
+function onExerciseDragEnd(){
+  if(!exerciseDragCtx) return;
+  const {row, list, templateId} = exerciseDragCtx;
+  row.classList.remove('dragging');
+  const newOrderIds = Array.from(list.querySelectorAll('.draggable-row')).map(el=>el.dataset.exerciseid);
+  const tpl = getTemplate(templateId);
+  const queues = {};
+  tpl.exercises.forEach(ex=>{ (queues[ex.exerciseId]=queues[ex.exerciseId]||[]).push(ex); });
+  const newExercises = newOrderIds.map(id=>queues[id].shift());
+  persistTemplateExercises(templateId, newExercises);
+  exerciseDragCtx = null;
+  renderEditorExercises(templateId);
+}
+
+/* Salva a lista de exercícios de um treino no lugar certo: se for um
+   treino criado pelo usuário, edita ele diretamente; se for um treino
+   fixo, salva como override por cima do padrão. */
+function persistTemplateExercises(templateId, exercises){
+  if(isCustomTemplate(templateId)){
+    state.customTemplates[templateId] = Object.assign({}, state.customTemplates[templateId], {exercises});
+  } else {
+    state.templateOverrides = state.templateOverrides || {};
+    state.templateOverrides[templateId] = {exercises};
+  }
+  persist();
+}
+
+function saveTemplateEdits(templateId){
+  const base = getTemplate(templateId);
+  if(!base) return;
+  const newExercises = base.exercises.map((ex,i)=>{
+    const sets = Number(document.querySelector(`[data-idx="${i}"][data-key="sets"]`).value)||ex.sets;
+    const reps = Number(document.querySelector(`[data-idx="${i}"][data-key="reps"]`).value)||ex.reps;
+    const load = Number(document.querySelector(`[data-idx="${i}"][data-key="load"]`).value);
+    const rest = Number(document.querySelector(`[data-idx="${i}"][data-key="rest"]`).value);
+    return Object.assign({}, ex, {sets, reps, load:isNaN(load)?ex.load:load, rest:isNaN(rest)?ex.rest:rest});
+  });
+  persistTemplateExercises(templateId, newExercises);
+  showToast('Treino atualizado', `${getTemplate(templateId).name} foi salvo com suas alterações.`, '✅');
+  renderEditorExercises(templateId);
+}
+
+function resetTemplateEdits(templateId){
+  if(isCustomTemplate(templateId)) return; // não se aplica a treinos próprios
+  if(state.templateOverrides){ delete state.templateOverrides[templateId]; }
+  persist();
+  showToast('Treino restaurado', `${WORKOUT_TEMPLATES[templateId].name} voltou ao padrão original.`, '↩️');
+  renderEditorExercises(templateId);
+}
+
+function addExerciseToTemplate(templateId, exerciseId){
+  const tpl = getTemplate(templateId);
+  const newExercises = tpl.exercises.concat([{exerciseId, sets:3, reps:10, load:0, rest:60}]);
+  persistTemplateExercises(templateId, newExercises);
+  const e = findExercise(exerciseId);
+  showToast('Exercício adicionado', `${e?e.name:exerciseId} foi adicionado ao treino.`, '➕');
+  renderEditorExercises(templateId);
+}
+
+function removeExerciseFromTemplate(templateId, idx){
+  const tpl = getTemplate(templateId);
+  const newExercises = tpl.exercises.filter((_,i)=>i!==idx);
+  persistTemplateExercises(templateId, newExercises);
+  showToast('Exercício removido', 'O exercício foi removido do treino.', '🗑️');
+  renderEditorExercises(templateId);
+}
+
+function duplicateTemplate(sourceId){
+  const src = getTemplate(sourceId);
+  if(!src) return;
+  const newId = 'custom_'+cryptoId();
+  state.customTemplates = state.customTemplates || {};
+  state.customTemplates[newId] = {
+    id: newId,
+    name: src.name + ' (cópia)',
+    muscle: src.muscle,
+    description: src.description,
+    estimatedTime: src.estimatedTime,
+    exercises: JSON.parse(JSON.stringify(src.exercises)),
+  };
+  persist();
+  showToast('Treino duplicado', `"${state.customTemplates[newId].name}" já pode ser editado à vontade.`, '📄');
+  const templateSelect = document.getElementById('editorTemplateSelect');
+  populateTemplateSelect(templateSelect, newId);
+  renderScheduleRows();
+  renderEditorExercises(newId);
+}
+
+function renameCustomTemplate(templateId){
+  if(!isCustomTemplate(templateId)) return;
+  const current = state.customTemplates[templateId].name;
+  openModal(`
+    <h2 style="margin-bottom:16px;">Renomear treino</h2>
+    <div class="field"><label>Nome</label><input type="text" id="renameInput" value="${escapeHtml(current)}" autofocus></div>
+    <button class="btn btn-primary btn-block" id="renameSaveBtn">Salvar</button>
+  `);
+  document.getElementById('renameSaveBtn').addEventListener('click', ()=>{
+    const newName = document.getElementById('renameInput').value.trim();
+    if(!newName) return;
+    state.customTemplates[templateId].name = newName;
+    persist();
+    closeModal();
+    showToast('Treino renomeado', `Agora chamado de "${newName}".`, '✏️');
+    const templateSelect = document.getElementById('editorTemplateSelect');
+    populateTemplateSelect(templateSelect, templateId);
+    renderScheduleRows();
+    renderEditorExercises(templateId);
+  });
+}
+
+function deleteCustomTemplate(templateId){
+  if(!isCustomTemplate(templateId)) return;
+  const name = state.customTemplates[templateId].name;
+  openModal(`
+    <h2 style="margin-bottom:8px;">Excluir "${escapeHtml(name)}"?</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:18px;">Se esse treino estiver em algum dia do cronograma, o dia vira Descanso. Essa ação não pode ser desfeita.</p>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-ghost" id="cancelDeleteBtn" style="flex:1;">Cancelar</button>
+      <button class="btn btn-danger" id="confirmDeleteBtn" style="flex:1;">Excluir</button>
+    </div>
+  `);
+  document.getElementById('cancelDeleteBtn').addEventListener('click', closeModal);
+  document.getElementById('confirmDeleteBtn').addEventListener('click', ()=>{
+    delete state.customTemplates[templateId];
+    Object.keys(state.weekPlan).forEach(day=>{
+      if(state.weekPlan[day]===templateId) state.weekPlan[day]='descanso';
+    });
+    persist();
+    closeModal();
+    showToast('Treino excluído', `"${name}" foi removido.`, '🗑️');
+    const templateSelect = document.getElementById('editorTemplateSelect');
+    populateTemplateSelect(templateSelect);
+    renderScheduleRows();
+    renderEditorExercises(templateSelect.value);
+  });
+}
+
+function createCustomExercise(){
+  const name = document.getElementById('newExName').value.trim();
+  if(!name){ showToast('Falta o nome', 'Escreva um nome pro exercício antes de criar.', '⚠️'); return; }
+  const ex = {
+    id: 'ex_custom_'+cryptoId(),
+    name,
+    muscle: document.getElementById('newExMuscle').value,
+    desc: document.getElementById('newExDesc').value.trim(),
+    execution: document.getElementById('newExExec').value.trim(),
+    mistakes: document.getElementById('newExMistakes').value.trim(),
+  };
+  state.customExercises = state.customExercises || [];
+  state.customExercises.push(ex);
+  persist();
+  showToast('Exercício criado', `${ex.name} já está disponível pra adicionar em qualquer treino.`, '🆕');
+  document.getElementById('newExName').value='';
+  document.getElementById('newExDesc').value='';
+  document.getElementById('newExExec').value='';
+  document.getElementById('newExMistakes').value='';
+  renderEditorExercises(document.getElementById('editorTemplateSelect').value);
+}
+
+function openWorkoutDetail(templateId, dateKey){
+  const tpl = getTemplate(templateId);
+  const done = !!state.completedDates[dateKey];
+  openModal(`
+    <h2 style="margin-bottom:4px;">${tpl.name}</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">${tpl.description}</p>
+    <div class="chip-row" style="margin-bottom:16px;">
+      <span class="chip">⏱ ${tpl.estimatedTime} min</span>
+      <span class="chip">📋 ${tpl.exercises.length} exercícios</span>
+      ${done?'<span class="chip active">✔ Concluído</span>':''}
+    </div>
+    <div>
+      ${tpl.exercises.map(ex=>{
+        const e = findExercise(ex.exerciseId);
+        return `<div class="list-row">
+          <div class="list-row-icon">${MUSCLE_ICONS[e.muscle]}</div>
+          <div class="list-row-body">
+            <div class="list-row-title">${e.name}</div>
+            <div class="list-row-sub">${ex.sets} séries × ${ex.reps} reps ${ex.load?`· ${ex.load}kg`:''}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <button class="btn btn-primary btn-block" style="margin-top:10px;" id="startFromModal">${done?'Refazer treino':'Iniciar treino'}</button>
+  `);
+  document.getElementById('startFromModal').addEventListener('click', ()=>{
+    closeModal();
+    startCheckinFlow(templateId, dateKey);
+  });
+}
+
+/* ======================================================================
+   CHECK-IN DIÁRIO
+   ====================================================================== */
+function startCheckinFlow(templateId, dateKey){
+  const key = todayKey();
+  if(state.checkins[key]){
+    openRunner(templateId, dateKey, state.checkins[key]);
+    return;
+  }
+  openModal(`
+    <h2 style="text-align:center;margin-bottom:6px;">Como você está hoje?</h2>
+    <p style="text-align:center;color:var(--text-dim);font-size:13px;margin-bottom:18px;">Isso nos ajuda a ajustar a intensidade do treino.</p>
+    <div class="mood-row" id="moodRow">
+      ${MOODS.map(m=>`<button class="mood-opt" data-mood="${m.id}"><span class="em">${m.emoji}</span><span>${m.label}</span></button>`).join('')}
+    </div>
+  `);
+  document.querySelectorAll('[data-mood]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const mood = btn.dataset.mood;
+      state.checkins[key] = mood;
+      persist();
+      closeModal();
+      if(mood==='tired' || mood==='exhausted'){
+        showToast('Ajuste sugerido', 'Notamos que você está cansado(a). Considere diminuir um pouco a carga hoje.', '💡');
+      }
+      openRunner(templateId, dateKey, mood);
+    });
+  });
+}
+
+/* ======================================================================
+   WORKOUT RUNNER (execução do treino)
+   ====================================================================== */
+function openRunner(templateId, dateKey, mood){
+  const tpl = getTemplate(templateId);
+  const loadMultiplier = (mood==='tired')?0.9:(mood==='exhausted')?0.8:1;
+  runnerCtx = {
+    id: cryptoId(),
+    templateId, dateKey, mood,
+    exIndex:0,
+    startTime:Date.now(),
+    lastCompleted:null, // {exIndex,setIndex} — pra permitir desfazer a última série marcada
+    restState:null,      // {endsAt(timestamp), totalSeconds, paused, pausedRemaining} — null quando não tá descansando
+    sets: tpl.exercises.map(ex=>{
+      const n = ex.sets||1;
+      // Defaults vêm da última performance real do histórico concluído.
+      // exerciseLoads segue como fallback de compatibilidade para dados antigos.
+      const lastSet = WorkoutProgression.mostRecentValidSet(state.history, ex.exerciseId, dateKey);
+      const legacyLoads = state.exerciseLoads[ex.exerciseId]||[];
+      const legacyLoad = legacyLoads.length ? legacyLoads[legacyLoads.length-1].weight : null;
+      const baseLoad = lastSet ? lastSet.weight : (legacyLoad || ex.load || 0);
+      const baseReps = lastSet ? lastSet.reps : (ex.reps||0);
+      return Array.from({length:n}, ()=>({
+        weight: baseLoad ? Math.round(baseLoad*loadMultiplier) : 0,
+        reps: baseReps,
+        notes:'',
+        done:false,
+        skipped:false,
+      }));
+    }),
+  };
+  let el = document.getElementById('runnerRoot');
+  if(!el){ el = document.createElement('div'); el.id='runnerRoot'; document.body.appendChild(el); }
+  el.innerHTML = `<div class="runner" id="runnerEl"></div>`;
+  requestAnimationFrame(()=>document.getElementById('runnerEl').classList.add('open'));
+  renderRunnerExercise();
+  startRunnerClock();
+  persistRunnerSession(); // já salva assim que o treino começa — sobrevive mesmo se sair antes da 1ª série
+}
+
+/* ======================================================================
+   PERSISTÊNCIA DO TREINO EM ANDAMENTO — sobrevive a fechar o app,
+   recarregar a página, trocar de app ou o sistema encerrar o PWA.
+   ======================================================================
+   O treino ativo vive só na memória (runnerCtx) igual antes, mas agora
+   TODA mudança relevante também é escrita em state.activeWorkoutSession
+   e salva no localStorage (via persist(), a mesma função que o resto do
+   app já usa) — sem inventar um caminho de armazenamento paralelo. */
+function persistRunnerSession(){
+  if(!runnerCtx) return;
+  state.activeWorkoutSession = {
+    id: runnerCtx.id,
+    templateId: runnerCtx.templateId,
+    dateKey: runnerCtx.dateKey,
+    mood: runnerCtx.mood,
+    status: 'active',
+    startedAt: runnerCtx.startTime,
+    exIndex: runnerCtx.exIndex,
+    sets: runnerCtx.sets,
+    lastCompleted: runnerCtx.lastCompleted,
+    restState: runnerCtx.restState,
+  };
+  persist();
+}
+
+/* Confere se uma sessão salva tem o formato mínimo esperado antes de
+   confiar nela — dado corrompido vira "sem treino ativo" em vez de
+   quebrar o app. */
+function isValidActiveSession(s){
+  if(!s || typeof s!=='object') return false;
+  if(s.status!=='active') return false;
+  if(!s.templateId || !Array.isArray(s.sets)) return false;
+  if(!getTemplate(s.templateId)) return false;
+  return true;
+}
+
+function discardActiveSession(){
+  if(state.activeWorkoutSession) state.activeWorkoutSession.status = 'discarded';
+  state.activeWorkoutSession = null;
+  persist();
+}
+
+/* Relógio do treino: atualiza só o texto do cabeçalho a cada segundo, sem
+   re-renderizar a tela inteira — evita trabalho desnecessário enquanto a
+   pessoa está no meio de uma série. */
+function startRunnerClock(){
+  stopRunnerClock();
+  updateRunnerClock();
+  runnerCtx.clockInterval = setInterval(updateRunnerClock, 1000);
+}
+function stopRunnerClock(){
+  if(runnerCtx && runnerCtx.clockInterval){ clearInterval(runnerCtx.clockInterval); runnerCtx.clockInterval=null; }
+}
+function updateRunnerClock(){
+  if(!runnerCtx) return;
+  const elapsedEl = document.getElementById('runnerElapsed');
+  const remainingEl = document.getElementById('runnerRemaining');
+  if(!elapsedEl && !remainingEl) return;
+  const elapsedMin = (Date.now()-runnerCtx.startTime)/60000;
+  const mm = Math.floor(elapsedMin), ss = Math.floor((elapsedMin-mm)*60);
+  if(elapsedEl) elapsedEl.textContent = `${mm}:${String(ss).padStart(2,'0')}`;
+  if(remainingEl){
+    const tpl = getTemplate(runnerCtx.templateId);
+    const remain = Math.max(0, Math.round((tpl.estimatedTime||30) - elapsedMin));
+    remainingEl.textContent = `~${remain} min restantes`;
+  }
+}
+
+function closeRunner(){
+  const el = document.getElementById('runnerEl');
+  if(el){ el.classList.remove('open'); setTimeout(()=>{ const root=document.getElementById('runnerRoot'); if(root) root.innerHTML=''; },350); }
+  RestTimer.stop();
+  removeTimerFab();
+  stopRunnerClock();
+  const overlay = document.getElementById('restOverlay');
+  if(overlay) overlay.remove();
+  runnerCtx = null;
+}
+
+function formatSetLine(set){
+  return `${WorkoutProgression.formatNumber(set.weight)} kg × ${Number(set.reps)||0}`;
+}
+
+function renderPreviousPerformance(previous){
+  if(!previous){
+    return `<div class="previous-performance empty"><span>Workout anterior</span><b>Primeira vez</b></div>`;
+  }
+  return `
+    <div class="previous-performance">
+      <span>Workout anterior</span>
+      <div class="previous-set-list">
+        ${previous.sets.map(set=>`<b>${formatSetLine(set)}</b>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function firstOpenSetIndex(setsArr){
+  const index = setsArr.findIndex(s=>!s.done && !s.skipped);
+  return index>=0 ? index : -1;
+}
+
+function adjustRunnerSetValue(setIndex, field, delta){
+  if(!runnerCtx) return;
+  const setsArr = runnerCtx.sets[runnerCtx.exIndex];
+  const set = setsArr && setsArr[setIndex];
+  if(!set || set.done || set.skipped) return;
+  const min = 0;
+  const next = Math.max(min, Number(set[field]||0) + delta);
+  set[field] = field==='weight' ? Math.round(next*10)/10 : Math.round(next);
+  persistRunnerSession();
+  renderRunnerExercise();
+}
+
+function setRunnerSetValue(setIndex, field, value){
+  if(!runnerCtx) return;
+  const setsArr = runnerCtx.sets[runnerCtx.exIndex];
+  const set = setsArr && setsArr[setIndex];
+  if(!set || set.done || set.skipped) return;
+  const next = Math.max(0, Number(value)||0);
+  set[field] = field==='weight' ? Math.round(next*10)/10 : Math.round(next);
+  debouncedPersistRunnerSession();
+}
+
+function completeRunnerSet(setIndex, options){
+  if(!runnerCtx) return;
+  const tpl = getTemplate(runnerCtx.templateId);
+  const exDef = tpl.exercises[runnerCtx.exIndex];
+  const exercise = findExercise(exDef.exerciseId);
+  const setsArr = runnerCtx.sets[runnerCtx.exIndex];
+  const set = setsArr[setIndex];
+  if(!set || set.done || set.skipped) return;
+
+  set.done = true;
+  runnerCtx.lastCompleted = {exIndex:runnerCtx.exIndex, setIndex};
+  persistRunnerSession();
+
+  const pr = WorkoutProgression.detectSetPR(state.history, exDef.exerciseId, set, setsArr, runnerCtx.dateKey);
+  if(pr){
+    showToast('Novo PR', `${exercise ? exercise.name : exDef.exerciseId} — ${pr.value}`, '🏆');
+  } else {
+    showToast('1 série concluída', 'Desfazer disponível no descanso.', '✅');
+  }
+
+  if(!options || options.startRest!==false) openRestTimerPicker(exDef.rest||60, true);
+  renderRunnerExercise();
+}
+
+function renderRunnerExercise(){
+  const runnerEl = document.getElementById('runnerEl');
+  if(!runnerEl || !runnerCtx) return;
+  const tpl = getTemplate(runnerCtx.templateId);
+  const exDef = tpl.exercises[runnerCtx.exIndex];
+  const e = findExercise(exDef.exerciseId);
+  const setsArr = runnerCtx.sets[runnerCtx.exIndex];
+  const allDone = setsArr.every(s=>s.done || s.skipped);
+  const isLast = runnerCtx.exIndex === tpl.exercises.length-1;
+  const doneCount = setsArr.filter(s=>s.done).length;
+  const progressPct = ((runnerCtx.exIndex + (setsArr.length?doneCount/setsArr.length:0)) / tpl.exercises.length) * 100;
+  const previous = WorkoutProgression.previousPerformance(state.history, exDef.exerciseId, runnerCtx.dateKey);
+  const activeSetIndex = firstOpenSetIndex(setsArr);
+  const activeSet = activeSetIndex>=0 ? setsArr[activeSetIndex] : null;
+  const weightStep = WorkoutProgression.inferWeightStep(exDef, previous);
+  const summary = WorkoutProgression.exerciseSummary(state.history, exDef.exerciseId, setsArr, runnerCtx.dateKey);
+  const progression = WorkoutProgression.progressionSuggestion({
+    history: state.history,
+    exerciseId: exDef.exerciseId,
+    exercise: e,
+    exerciseDef: exDef,
+    currentSets: setsArr,
+    beforeDate: runnerCtx.dateKey,
+  });
+
+  runnerEl.innerHTML = `
+    <div class="runner-header">
+      <button class="icon-btn" id="runnerClose" aria-label="Fechar treino">${icon('x')}</button>
+      <div class="runner-header-mid">
+        <div class="runner-counter">${runnerCtx.exIndex+1} / ${tpl.exercises.length}</div>
+        <div class="runner-clock"><span id="runnerElapsed">0:00</span> · <span id="runnerRemaining">~${tpl.estimatedTime||30} min restantes</span></div>
+      </div>
+      <button class="icon-btn" id="runnerRestBtn" aria-label="Cronômetro de descanso">${icon('clock')}</button>
+    </div>
+    <div class="runner-body" id="runnerScrollArea">
+      <div class="progress-track" style="max-width:400px;margin-bottom:20px;" role="progressbar" aria-valuenow="${Math.round(progressPct)}" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso do treino"><div class="progress-fill thin" style="width:${progressPct}%"></div></div>
+      <div class="runner-exercise-media ${allDone?'complete':''}" id="runnerMedia">${MUSCLE_ICONS[e.muscle]||'🏋️'}</div>
+      <div class="runner-title">${e.name}</div>
+      <div class="runner-muscle">${capitalize(e.muscle)} · ${exDef.sets} séries × ${exDef.reps} reps · ⏱ ${exDef.rest||60}s descanso</div>
+      ${renderPreviousPerformance(previous)}
+
+      ${activeSet ? `
+        <div class="quick-set-card" data-quick-set="${activeSetIndex}" tabindex="0" aria-label="Registrar série ${activeSetIndex+1}">
+          <div class="quick-set-head">
+            <span>Série ${activeSetIndex+1} de ${setsArr.length}</span>
+            ${runnerCtx.lastCompleted?`<button class="btn btn-ghost btn-sm" id="runnerUndoBtn">Desfazer</button>`:''}
+          </div>
+          <div class="quick-control" data-control="weight">
+            <button class="quick-step" data-adjust-field="weight" data-adjust-set="${activeSetIndex}" data-adjust-delta="${-weightStep}" aria-label="Diminuir carga">−</button>
+            <div class="quick-value">
+              <label for="quickWeightInput">Peso</label>
+              <input id="quickWeightInput" type="number" min="0" step="${weightStep}" inputmode="decimal" value="${activeSet.weight}" data-quick-field="weight" data-quick-set="${activeSetIndex}" aria-label="Carga da série atual">
+            </div>
+            <button class="quick-step" data-adjust-field="weight" data-adjust-set="${activeSetIndex}" data-adjust-delta="${weightStep}" aria-label="Aumentar carga">+</button>
+          </div>
+          <div class="quick-control" data-control="reps">
+            <button class="quick-step" data-adjust-field="reps" data-adjust-set="${activeSetIndex}" data-adjust-delta="-1" aria-label="Diminuir repetições">−</button>
+            <div class="quick-value">
+              <label for="quickRepsInput">Reps</label>
+              <input id="quickRepsInput" type="number" min="0" step="1" inputmode="numeric" value="${activeSet.reps}" data-quick-field="reps" data-quick-set="${activeSetIndex}" aria-label="Repetições da série atual">
+            </div>
+            <button class="quick-step" data-adjust-field="reps" data-adjust-set="${activeSetIndex}" data-adjust-delta="1" aria-label="Aumentar repetições">+</button>
+          </div>
+          <button class="btn btn-primary btn-block quick-complete" data-complete-set="${activeSetIndex}">Concluir série</button>
+        </div>
+      ` : `
+        <div class="quick-set-card complete">
+          <div class="quick-done-title">Todas as séries deste exercício foram registradas.</div>
+          ${runnerCtx.lastCompleted?`<button class="btn btn-ghost btn-sm" id="runnerUndoBtn">Desfazer última série</button>`:''}
+        </div>
+      `}
+
+      <div class="set-tracker" id="setTracker">
+        ${setsArr.map((s,i)=>`
+          <div class="set-row ${s.done?'done':''} ${s.skipped?'skipped':''}" data-set="${i}">
+            <div class="set-num">${i+1}</div>
+            ${s.skipped ? `
+              <div class="set-skipped-label">Série pulada</div>
+              <button class="btn btn-ghost btn-sm" data-unskip="${i}">Reverter</button>
+            ` : `
+              <div class="set-field"><label>Kg</label><input type="number" min="0" step="${weightStep}" value="${s.weight}" data-field="weight" data-set="${i}" aria-label="Carga da série ${i+1}"></div>
+              <div class="set-field"><label>Reps</label><input type="number" min="0" value="${s.reps}" data-field="reps" data-set="${i}" aria-label="Repetições da série ${i+1}"></div>
+              <button class="icon-btn set-skip-btn" data-skip="${i}" aria-label="Pular série ${i+1}" title="Pular série">${icon('x',{size:14})}</button>
+              <button class="set-check" data-check="${i}" aria-label="${s.done?'Série concluída':'Concluir série '+(i+1)}">${s.done?icon('check',{size:18}):''}</button>
+            `}
+          </div>
+        `).join('')}
+      </div>
+      <div class="exercise-summary">
+        <div><span>Séries</span><b>${summary.setsCompleted}/${setsArr.length}</b></div>
+        <div><span>Reps</span><b>${summary.totalReps}</b></div>
+        <div><span>Volume</span><b>${WorkoutProgression.formatNumber(summary.currentVolume)} kg</b></div>
+        <div><span>Anterior</span><b>${summary.previousVolume ? `${WorkoutProgression.formatNumber(summary.previousVolume)} kg` : '—'}</b></div>
+        <div><span>Atual vs anterior</span><b>${summary.deltaPct===null ? '—' : `${summary.deltaPct>=0?'↑':'↓'} ${Math.abs(summary.deltaPct).toFixed(1)}%`}</b></div>
+      </div>
+      ${progression ? `<div class="progression-suggestion"><b>${progression.message}</b><span>${progression.next}</span></div>` : ''}
+      <button class="btn btn-ghost btn-sm" id="showInfoBtn" style="margin-top:16px;">ℹ️ Ver execução correta</button>
+    </div>
+    <div class="runner-footer">
+      ${isLast && allDone
+        ? `<button class="btn btn-success btn-block" id="finishWorkoutBtn">🎉 Concluir treino</button>`
+        : `<button class="btn btn-primary btn-block" id="nextExerciseBtn" ${allDone?'':'disabled'}>${isLast?'Concluir treino':'Próximo exercício'}</button>`
+      }
+    </div>
+  `;
+
+  document.getElementById('runnerClose').addEventListener('click', ()=>{
+    if(confirm('Sair do treino? Seu progresso nesta sessão será perdido.')){
+      discardActiveSession();
+      closeRunner();
+    }
+  });
+  document.getElementById('runnerRestBtn').addEventListener('click', ()=>openRestTimerPicker(exDef.rest||60));
+  document.getElementById('showInfoBtn').addEventListener('click', ()=>openExerciseModal(e.id));
+
+  runnerEl.querySelectorAll('[data-adjust-field]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      adjustRunnerSetValue(Number(btn.dataset.adjustSet), btn.dataset.adjustField, Number(btn.dataset.adjustDelta));
+    });
+  });
+  runnerEl.querySelectorAll('[data-quick-field]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      setRunnerSetValue(Number(inp.dataset.quickSet), inp.dataset.quickField, inp.value);
+    });
+    inp.addEventListener('blur', ()=>{
+      persistRunnerSession();
+      renderRunnerExercise();
+    });
+  });
+  runnerEl.querySelectorAll('[data-complete-set]').forEach(btn=>{
+    btn.addEventListener('click', ()=>completeRunnerSet(Number(btn.dataset.completeSet)));
+  });
+  const quickCard = runnerEl.querySelector('[data-quick-set]');
+  if(quickCard){
+    quickCard.addEventListener('keydown', (event)=>{
+      const isInput = ['INPUT','TEXTAREA','SELECT'].includes(event.target.tagName);
+      if(isInput) return;
+      const setIndex = Number(quickCard.dataset.quickSet);
+      if(event.key==='Enter'){
+        event.preventDefault();
+        completeRunnerSet(setIndex);
+      } else if(event.key==='ArrowUp'){
+        event.preventDefault();
+        adjustRunnerSetValue(setIndex, 'weight', weightStep);
+      } else if(event.key==='ArrowDown'){
+        event.preventDefault();
+        adjustRunnerSetValue(setIndex, 'weight', -weightStep);
+      }
+    });
+  }
+  const undoInlineBtn = document.getElementById('runnerUndoBtn');
+  if(undoInlineBtn) undoInlineBtn.addEventListener('click', undoLastSet);
+
+  runnerEl.querySelectorAll('[data-field]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const i = Number(inp.dataset.set);
+      setsArr[i][inp.dataset.field] = Number(inp.value)||0;
+      debouncedPersistRunnerSession();
+    });
+  });
+  runnerEl.querySelectorAll('[data-check]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const i = Number(btn.dataset.check);
+      if(setsArr[i].done){
+        runnerCtx.lastCompleted = {exIndex:runnerCtx.exIndex, setIndex:i};
+        undoLastSet();
+      } else {
+        completeRunnerSet(i);
+      }
+    });
+  });
+  runnerEl.querySelectorAll('[data-skip]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const i = Number(btn.dataset.skip);
+      setsArr[i].skipped = true;
+      setsArr[i].done = false;
+      persistRunnerSession();
+      renderRunnerExercise();
+    });
+  });
+  runnerEl.querySelectorAll('[data-unskip]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const i = Number(btn.dataset.unskip);
+      setsArr[i].skipped = false;
+      persistRunnerSession();
+      renderRunnerExercise();
+    });
+  });
+  const nextBtn = document.getElementById('nextExerciseBtn');
+  if(nextBtn) nextBtn.addEventListener('click', goToNextExercise);
+  const finishBtn = document.getElementById('finishWorkoutBtn');
+  if(finishBtn) finishBtn.addEventListener('click', finishWorkout);
+
+  updateRunnerClock();
+}
+
+/* Peso/reps mudam a cada tecla digitada — salvar a cada toque seria
+   excessivo, então essas escritas usam um pequeno atraso (debounce).
+   Ações críticas (marcar/pular série) NUNCA passam por aqui — são
+   sempre salvas na hora, direto em persistRunnerSession(). */
+let runnerSaveDebounce = null;
+function debouncedPersistRunnerSession(){
+  clearTimeout(runnerSaveDebounce);
+  runnerSaveDebounce = setTimeout(persistRunnerSession, 500);
+}
+
+function goToNextExercise(){
+  const tpl = getTemplate(runnerCtx.templateId);
+  if(runnerCtx.exIndex < tpl.exercises.length-1){
+    runnerCtx.exIndex++;
+    persistRunnerSession();
+    renderRunnerExercise();
+    const scrollArea = document.getElementById('runnerScrollArea');
+    if(scrollArea) scrollArea.scrollTop = 0;
+  } else {
+    finishWorkout();
+  }
+}
+
+function getRestNextLabel(){
+  if(!runnerCtx) return {kind:'none', text:''};
+  const tpl = getTemplate(runnerCtx.templateId);
+  const exDef = tpl.exercises[runnerCtx.exIndex];
+  const setsArr = runnerCtx.sets[runnerCtx.exIndex];
+  const allDone = setsArr.every(s=>s.done);
+  if(!allDone){
+    const e = findExercise(exDef.exerciseId);
+    return {kind:'set', text:`Próxima série · ${e?e.name:''}`};
+  }
+  const isLast = runnerCtx.exIndex === tpl.exercises.length-1;
+  if(isLast) return {kind:'finish', text:'Última série concluída — hora de finalizar! 🎉'};
+  const nextDef = tpl.exercises[runnerCtx.exIndex+1];
+  const nextE = findExercise(nextDef.exerciseId);
+  return {kind:'exercise', text:`Próximo exercício · ${nextE?nextE.name:''}`};
+}
+
+function openRestTimerPicker(defaultSeconds, autoStart){
+  if(autoStart){
+    startRestOverlay(defaultSeconds);
+  } else {
+    openModal(`
+      <h2 style="margin-bottom:14px;">Cronômetro de descanso</h2>
+      <div class="chip-row">
+        ${[30,60,90,120].map(o=>`<button class="chip" data-sec="${o}">${o}s</button>`).join('')}
+      </div>
+    `);
+    document.querySelectorAll('[data-sec]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        closeModal();
+        startRestOverlay(Number(btn.dataset.sec));
+      });
+    });
+  }
+}
+
+const REST_MOTIVATION = [
+  'Respira fundo. A próxima série te espera.',
+  'Você já está mais forte que na última série.',
+  'Hidrata e prepara — quase lá.',
+  'Cada segundo de descanso também é treino.',
+  'Foco no que vem a seguir.',
+  'Consistência vence intensidade.',
+];
+
+function startRestOverlay(seconds, existingEndsAt){
+  removeTimerFab();
+  const next = getRestNextLabel();
+  const showMotivation = Math.random()<0.5;
+  const motivation = REST_MOTIVATION[Math.floor(Math.random()*REST_MOTIVATION.length)];
+  const canUndo = !!runnerCtx.lastCompleted;
+  const circumference = 2*Math.PI*90;
+
+  // Fonte da verdade é o RELÓGIO (timestamp de término), não uma contagem
+  // regressiva em memória — assim o tempo continua certo mesmo se o app
+  // ficar em segundo plano (o navegador pode atrasar o setInterval, mas
+  // recalculamos a partir de endsAt a cada tique, então se autocorrige).
+  const endsAt = existingEndsAt || (Date.now() + seconds*1000);
+  const initialRemaining = Math.max(0, Math.round((endsAt-Date.now())/1000));
+  runnerCtx.restState = {endsAt, totalSeconds:seconds, paused:false, pausedRemaining:null};
+  persistRunnerSession();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'rest-overlay';
+  overlay.id = 'restOverlay';
+  overlay.innerHTML = `
+    <div class="rest-overlay-inner">
+      <div class="rest-eyebrow">Descanso</div>
+      <div class="rest-ring">
+        <svg viewBox="0 0 200 200">
+          <circle class="rest-ring-bg" cx="100" cy="100" r="90"></circle>
+          <circle class="rest-ring-fg" id="restRingFg" cx="100" cy="100" r="90" stroke-dasharray="${circumference}" stroke-dashoffset="0"></circle>
+        </svg>
+        <div class="rest-time" id="restTimeLabel" role="button" tabindex="0" title="Toque pra editar">${initialRemaining}</div>
+      </div>
+      <p class="rest-edit-hint">Toque no número pra editar</p>
+      <div class="rest-next">
+        <span class="rest-next-label">${next.kind==='finish'?'':'A seguir'}</span>
+        <div class="rest-next-name">${next.text}</div>
+      </div>
+      ${showMotivation?`<p class="rest-motivation">${motivation}</p>`:''}
+      <div class="rest-actions">
+        <div class="rest-adjust-row">
+          <button class="btn btn-ghost" id="restMinus15" aria-label="Tirar 15 segundos">−15s</button>
+          <button class="btn btn-ghost" id="restPauseBtn" aria-label="Pausar cronômetro">${icon('clock',{size:16})}</button>
+          <button class="btn btn-ghost" id="restAdd15" aria-label="Adicionar 15 segundos">+15s</button>
+        </div>
+        <button class="btn btn-primary hero-cta" id="restSkipBtn">Pular descanso</button>
+        ${canUndo?`<button class="btn btn-ghost btn-sm" id="restUndoBtn">Desfazer última série</button>`:''}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(()=>overlay.classList.add('open'));
+
+  const timeBox = overlay.querySelector('.rest-ring');
+
+  function onTick(){
+    if(!runnerCtx || !runnerCtx.restState) return;
+    const clamped = Math.max(0, Math.round((runnerCtx.restState.endsAt-Date.now())/1000));
+    const label = document.getElementById('restTimeLabel');
+    if(label) label.textContent = clamped;
+    const currentRing = document.getElementById('restRingFg');
+    if(currentRing) currentRing.style.strokeDashoffset = circumference * (1 - clamped/Math.max(runnerCtx.restState.totalSeconds,1));
+  }
+  function onDone(){
+    const label = document.getElementById('restTimeLabel');
+    if(label) label.textContent = '0';
+    showToast('Descanso finalizado', 'Hora de voltar para a próxima série!', '⏱');
+    closeRestOverlay();
+  }
+  function restartAt(newSeconds){
+    newSeconds = Math.max(1, Math.round(newSeconds));
+    runnerCtx.restState = {endsAt: Date.now()+newSeconds*1000, totalSeconds:newSeconds, paused:false, pausedRemaining:null};
+    persistRunnerSession();
+    RestTimer.start(newSeconds, onTick, onDone);
+  }
+
+  if(initialRemaining<=0){ onDone(); }
+  else RestTimer.start(initialRemaining, onTick, onDone);
+
+  overlay.querySelector('#restSkipBtn').addEventListener('click', closeRestOverlay);
+  overlay.querySelector('#restAdd15').addEventListener('click', ()=>restartAt(Math.round((runnerCtx.restState.endsAt-Date.now())/1000)+15));
+  overlay.querySelector('#restMinus15').addEventListener('click', ()=>restartAt(Math.round((runnerCtx.restState.endsAt-Date.now())/1000)-15));
+
+  const pauseBtn = overlay.querySelector('#restPauseBtn');
+  pauseBtn.addEventListener('click', ()=>{
+    if(RestTimer.isRunning()){
+      RestTimer.pause();
+      const remaining = Math.max(0, Math.round((runnerCtx.restState.endsAt-Date.now())/1000));
+      runnerCtx.restState.paused = true;
+      runnerCtx.restState.pausedRemaining = remaining;
+      persistRunnerSession();
+      pauseBtn.innerHTML = icon('check',{size:16}); // reaproveita um ícone claro de "retomar"
+      pauseBtn.setAttribute('aria-label','Retomar cronômetro');
+      overlay.classList.add('paused');
+    } else {
+      const remaining = runnerCtx.restState.pausedRemaining||0;
+      runnerCtx.restState.endsAt = Date.now()+remaining*1000;
+      runnerCtx.restState.paused = false;
+      runnerCtx.restState.pausedRemaining = null;
+      persistRunnerSession();
+      RestTimer.resume();
+      pauseBtn.innerHTML = icon('clock',{size:16});
+      pauseBtn.setAttribute('aria-label','Pausar cronômetro');
+      overlay.classList.remove('paused');
+    }
+  });
+
+  const undoBtn = overlay.querySelector('#restUndoBtn');
+  if(undoBtn) undoBtn.addEventListener('click', undoLastSet);
+
+  function enterEditMode(){
+    RestTimer.stop();
+    const current = Math.max(0, Math.round((runnerCtx.restState.endsAt-Date.now())/1000)) || seconds;
+    timeBox.innerHTML = `
+      <svg viewBox="0 0 200 200">
+        <circle class="rest-ring-bg" cx="100" cy="100" r="90"></circle>
+        <circle class="rest-ring-fg" id="restRingFg" cx="100" cy="100" r="90" stroke-dasharray="${circumference}" stroke-dashoffset="0"></circle>
+      </svg>
+      <input type="number" id="restTimeInput" class="rest-time-input" min="5" step="5" value="${current}">
+    `;
+    const input = document.getElementById('restTimeInput');
+    input.focus();
+    input.select();
+    function commit(){
+      const val = Number(input.value);
+      restartAt(val>0 ? val : current);
+      rebuildRing();
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter'){ e.preventDefault(); input.blur(); }
+    });
+  }
+
+  function rebuildRing(){
+    const remaining = Math.max(0, Math.round((runnerCtx.restState.endsAt-Date.now())/1000));
+    timeBox.innerHTML = `
+      <svg viewBox="0 0 200 200">
+        <circle class="rest-ring-bg" cx="100" cy="100" r="90"></circle>
+        <circle class="rest-ring-fg" id="restRingFg" cx="100" cy="100" r="90" stroke-dasharray="${circumference}" stroke-dashoffset="0"></circle>
+      </svg>
+      <div class="rest-time" id="restTimeLabel" role="button" tabindex="0" title="Toque pra editar">${remaining}</div>
+    `;
+    timeBox.querySelector('#restTimeLabel').addEventListener('click', enterEditMode);
+  }
+
+  timeBox.querySelector('#restTimeLabel').addEventListener('click', enterEditMode);
+}
+
+function undoLastSet(){
+  if(!runnerCtx || !runnerCtx.lastCompleted) return;
+  const {exIndex, setIndex} = runnerCtx.lastCompleted;
+  if(runnerCtx.sets[exIndex] && runnerCtx.sets[exIndex][setIndex]){
+    runnerCtx.sets[exIndex][setIndex].done = false;
+  }
+  runnerCtx.lastCompleted = null;
+  closeRestOverlay();
+  persistRunnerSession();
+  if(exIndex===runnerCtx.exIndex) renderRunnerExercise();
+  showToast('Série desfeita', 'Marcada como não concluída novamente.', '↩️');
+}
+
+function closeRestOverlay(){
+  RestTimer.stop();
+  if(runnerCtx){ runnerCtx.restState = null; persistRunnerSession(); }
+  const overlay = document.getElementById('restOverlay');
+  if(overlay){
+    overlay.classList.remove('open');
+    setTimeout(()=>overlay.remove(), 300);
+  }
+}
+
+function removeTimerFab(){
+  const fab = document.getElementById('timerFab');
+  if(fab) fab.remove();
+}
+
+function finishWorkout(){
+  stopRunnerClock();
+  const tpl = getTemplate(runnerCtx.templateId);
+  const durationMin = Math.max(1, Math.round((Date.now()-runnerCtx.startTime)/60000));
+  let volume = 0, setsCompleted = 0;
+  const exercisesLog = tpl.exercises.map((exDef,i)=>{
+    const sets = runnerCtx.sets[i].map(s=>({weight:s.weight, reps:s.reps, notes:s.notes, done:s.done, skipped:s.skipped}));
+    sets.forEach(s=>{ if(s.done){ volume += (s.weight*s.reps); setsCompleted++; } });
+    return {exerciseId:exDef.exerciseId, sets};
+  });
+  const exercisesCompleted = exercisesLog.filter(el=>el.sets.some(s=>s.done)).length;
+  const calories = Math.round(volume*0.05 + durationMin*4);
+  const session = {
+    id:cryptoId(), templateId:runnerCtx.templateId, name:tpl.name,
+    date: runnerCtx.dateKey, duration:durationMin, volume, calories, exercisesLog,
+  };
+
+  // -------------------------------------------------------------------
+  // Grava tudo em memória, tenta salvar UMA vez, e só marca a sessão
+  // ativa como concluída se esse save realmente funcionou — assim uma
+  // falha de armazenamento (disco cheio, por ex.) nunca troca uma sessão
+  // ativa recuperável por um treino que não foi salvo de verdade.
+  // -------------------------------------------------------------------
+  const rollback = {
+    historyLength: state.history.length,
+    completedDate: state.completedDates[runnerCtx.dateKey],
+    activeSession: state.activeWorkoutSession,
+    exerciseLoadsSnapshot: JSON.parse(JSON.stringify(state.exerciseLoads)),
+    bestStreak: state.bestStreak,
+    fullWeeksCompleted: state.fullWeeksCompleted,
+  };
+
+  state.history.push(session);
+  state.completedDates[runnerCtx.dateKey] = runnerCtx.templateId;
+
+  // registra evolução de carga por exercício + verifica recorde
+  let newRecord = false;
+  exercisesLog.forEach(el=>{
+    const maxWeight = Math.max(0, ...el.sets.filter(s=>s.done).map(s=>s.weight));
+    if(maxWeight<=0) return;
+    if(!state.exerciseLoads[el.exerciseId]) state.exerciseLoads[el.exerciseId]=[];
+    const prevMax = Math.max(0, ...state.exerciseLoads[el.exerciseId].map(l=>l.weight));
+    if(maxWeight>prevMax && prevMax>0) newRecord = true;
+    state.exerciseLoads[el.exerciseId].push({date:runnerCtx.dateKey, weight:maxWeight, reps:el.sets[0]?.reps||0});
+  });
+
+  // marca meta de treino do dia como progresso implícito (não força conclusão)
+  state.streak = computeStreak(state.completedDates);
+  const isNewStreakRecord = state.streak > (state.bestStreak||0) && state.streak>=2;
+  if(isNewStreakRecord) state.bestStreak = state.streak;
+
+  // verifica semana completa
+  const wp = weekProgressAfterSave();
+  if(wp.done===wp.total && wp.total>0){
+    state.fullWeeksCompleted = (state.fullWeeksCompleted||0)+1;
+  }
+
+  state.activeWorkoutSession = null; // só vale se o persist() abaixo funcionar
+
+  const ok = persist();
+  if(!ok){
+    // desfaz tudo — o treino continua ativo e recuperável, nada se perde
+    state.history.length = rollback.historyLength;
+    if(rollback.completedDate===undefined) delete state.completedDates[runnerCtx.dateKey];
+    else state.completedDates[runnerCtx.dateKey] = rollback.completedDate;
+    state.exerciseLoads = rollback.exerciseLoadsSnapshot;
+    state.bestStreak = rollback.bestStreak;
+    state.fullWeeksCompleted = rollback.fullWeeksCompleted;
+    state.activeWorkoutSession = rollback.activeSession;
+    persistRunnerSession();
+    showToast('Não foi possível salvar', 'Sem espaço de armazenamento. Seu treino continua salvo — tente novamente.', '⚠️');
+    startRunnerClock();
+    return;
+  }
+
+  checkAchievements();
+  addXp(50);
+
+  if(newRecord) pushNotification('Novo recorde! 🎉', 'Você superou sua carga anterior em um exercício.', '🏆');
+  if(isNewStreakRecord) pushNotification('Novo recorde de sequência!', `${state.streak} dias treinando seguidos.`, '🔥');
+
+  showCompletionScreen(session, {xp:50, newRecord, isNewStreakRecord, setsCompleted, exercisesCompleted, totalExercises:tpl.exercises.length});
+}
+
+const FINISH_MOTIVATION = [
+  'Mais um passo na direção certa.',
+  'Consistência é o que constrói resultado.',
+  'Seu eu do futuro agradece esse treino.',
+  'Descansa bem — você mereceu.',
+  'Todo treino conta, inclusive esse.',
+];
+
+function weekProgressAfterSave(){ return weekProgress(); }
+
+function showCompletionScreen(session, extra){
+  extra = extra || {};
+  const motivation = FINISH_MOTIVATION[Math.floor(Math.random()*FINISH_MOTIVATION.length)];
+  const runnerEl = document.getElementById('runnerEl');
+  runnerEl.innerHTML = `
+    <div class="runner-body" style="justify-content:center;flex:1;">
+      <div class="celebrate">
+        <div class="emoji">🎉</div>
+        <h2>Parabéns!</h2>
+        <p>Treino concluído com sucesso.</p>
+        <div class="celebrate-stats">
+          <div><b>${session.duration}min</b><span>Duração</span></div>
+          <div><b>${session.volume}kg</b><span>Volume</span></div>
+          <div><b>${session.calories}</b><span>Kcal</span></div>
+        </div>
+        <div class="celebrate-stats">
+          <div><b>${extra.exercisesCompleted||0}/${extra.totalExercises||0}</b><span>Exercícios</span></div>
+          <div><b>${extra.setsCompleted||0}</b><span>Séries</span></div>
+          <div><b>🔥 ${state.streak}</b><span>Sequência</span></div>
+        </div>
+        <div class="xp-earned">+${extra.xp||0} XP</div>
+        ${extra.isNewStreakRecord?`<p class="celebrate-extra">🔥 Novo recorde de sequência: ${state.streak} dias!</p>`:''}
+        ${extra.newRecord?`<p class="celebrate-extra">🏆 Novo recorde de carga em algum exercício!</p>`:''}
+        <p class="celebrate-motivation">${motivation}</p>
+        <button class="btn btn-primary btn-block" id="closeCelebrate">Concluir</button>
+      </div>
+    </div>
+  `;
+  launchConfetti();
+  document.getElementById('closeCelebrate').addEventListener('click', ()=>{
+    closeRunner();
+    navigate('dashboard');
+  });
+}
+
+/* ======================================================================
+   VIEW: EXERCÍCIOS
+   ====================================================================== */
+const MUSCLE_FILTERS = ['todos','peito','costas','pernas','gluteos','ombros','biceps','triceps','abdomen','cardio'];
+const MUSCLE_LABELS = {todos:'Todos', peito:'Peito', costas:'Costas', pernas:'Pernas', gluteos:'Glúteos', ombros:'Ombros', biceps:'Bíceps', triceps:'Tríceps', abdomen:'Abdômen', cardio:'Cardio'};
+
+function renderExercises(){
+  const wrap = document.getElementById('treinoTabContent');
+  wrap.innerHTML = `
+    <div class="field"><input type="text" id="exSearch" placeholder="🔍 Pesquisar exercícios..." value="${escapeHtml(exerciseSearch)}"></div>
+    <div class="chip-row" id="exFilters" style="margin-bottom:18px;">
+      ${MUSCLE_FILTERS.map(m=>`<button class="chip ${exerciseFilter===m?'active':''}" data-filter="${m}">${MUSCLE_LABELS[m]}</button>`).join('')}
+    </div>
+    <div class="grid grid-3" id="exGrid"></div>
+  `;
+  document.getElementById('exSearch').addEventListener('input', (e)=>{ exerciseSearch=e.target.value; renderExGrid(); });
+  document.querySelectorAll('[data-filter]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ exerciseFilter=btn.dataset.filter; renderExercises(); });
+  });
+  renderExGrid();
+}
+
+function renderExGrid(){
+  const grid = document.getElementById('exGrid');
+  const filtered = allExercises().filter(e=>
+    (exerciseFilter==='todos'||e.muscle===exerciseFilter) &&
+    e.name.toLowerCase().includes(exerciseSearch.toLowerCase())
+  );
+  if(filtered.length===0){ grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><span class="emoji">🔍</span>Nenhum exercício encontrado.</div>`; return; }
+  grid.innerHTML = filtered.map(e=>`
+    <div class="card exercise-card interactive" data-ex="${e.id}">
+      <div class="exercise-thumb">${MUSCLE_ICONS[e.muscle]}</div>
+      <div class="exercise-name">${e.name}</div>
+      <div class="exercise-meta">${e.desc.slice(0,46)}${e.desc.length>46?'…':''}</div>
+      <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
+    </div>`).join('');
+  grid.querySelectorAll('[data-ex]').forEach(card=>{
+    card.addEventListener('click', ()=>openExerciseModal(card.dataset.ex));
+  });
+}
+
+function openExerciseModal(exId){
+  const e = findExercise(exId);
+  const logs = state.exerciseLoads[exId]||[];
+  const lastLog = logs[logs.length-1];
+  openModal(`
+    <div class="exercise-thumb" style="aspect-ratio:16/8;font-size:52px;">${MUSCLE_ICONS[e.muscle]}</div>
+    <h2 style="margin:14px 0 4px;">${e.name}</h2>
+    <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
+    <p style="margin-top:14px;font-size:13.5px;color:var(--text-dim);line-height:1.6;">${e.desc}</p>
+    <hr class="sep">
+    <h4 style="font-size:13px;margin-bottom:6px;">✅ Execução correta</h4>
+    <p style="font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:14px;">${e.execution}</p>
+    <h4 style="font-size:13px;margin-bottom:6px;">⚠️ Erros comuns</h4>
+    <p style="font-size:13px;color:var(--text-dim);line-height:1.6;">${e.mistakes}</p>
+    ${lastLog?`<hr class="sep"><h4 style="font-size:13px;margin-bottom:6px;">📈 Última carga registrada</h4><p style="font-size:13px;">${lastLog.weight}kg em ${fmtDate(lastLog.date)}</p>`:''}
+    ${logs.length>=2?`<button class="btn btn-primary btn-block" id="viewAnalyticsBtn" style="margin-top:16px;">Ver progresso detalhado</button>`:''}
+  `);
+  const analyticsBtn = document.getElementById('viewAnalyticsBtn');
+  if(analyticsBtn) analyticsBtn.addEventListener('click', ()=>openExerciseAnalytics(exId));
+}
+
+const TREND_LABEL = {'▲':'Melhorando', '▬':'Estável', '▼':'Diminuindo'};
+const TREND_COLOR = {'▲':'var(--green)', '▬':'var(--text-dim)', '▼':'var(--red)'};
+
+/* ======================================================================
+   FEATURE 10 — Tela de análise detalhada de um exercício
+   ====================================================================== */
+function openExerciseAnalytics(exId){
+  const e = findExercise(exId);
+  const logs = Analytics.exerciseLogs(exId);
+  const trend = Analytics.exerciseTrend(exId);
+  const plateau = Analytics.detectPlateau(exId);
+  const overload = Analytics.overloadSuggestion(exId);
+  const prs = Analytics.detectPRs().filter(p=>p.exerciseId===exId);
+
+  const totalSessions = logs.length;
+  const totalVolume = logs.reduce((a,l)=>a+(l.weight*(l.reps||0)),0);
+  const avgWeight = totalSessions ? Math.round(logs.reduce((a,l)=>a+l.weight,0)/totalSessions*10)/10 : 0;
+  const avgReps = totalSessions ? Math.round(logs.reduce((a,l)=>a+(l.reps||0),0)/totalSessions*10)/10 : 0;
+  const best1RM = Math.max(0, ...logs.map(l=>Analytics.estimated1RM(l.weight,l.reps||1)));
+
+  openModal(`
+    <h2 style="margin-bottom:4px;">${e.name}</h2>
+    <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
+
+    <div class="grid grid-3" style="margin:18px 0;">
+      <div class="stat-card"><span class="stat-label">1RM estimado</span><span class="stat-value" style="font-size:18px;">${best1RM}kg</span></div>
+      <div class="stat-card"><span class="stat-label">Sessões</span><span class="stat-value" style="font-size:18px;">${totalSessions}</span></div>
+      <div class="stat-card"><span class="stat-label">Volume total</span><span class="stat-value" style="font-size:18px;">${totalVolume}kg</span></div>
+    </div>
+
+    ${trend.status==='ok' ? `
+      <div class="section-title" style="margin-top:0;">Tendência</div>
+      <div class="card" style="margin-bottom:16px;">
+        ${[['Última sessão',trend.lastVsPrevious],['Últimos 30 dias',trend.last30Days],['Últimos 90 dias',trend.last90Days],['Desde o início',trend.allTime]].map(([label,sym])=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-top:1px solid var(--border);">
+            <span style="font-size:13px;color:var(--text-dim);">${label}</span>
+            <span style="font-weight:700;color:${TREND_COLOR[sym]};">${sym} ${TREND_LABEL[sym]}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+
+    <div class="section-title">Carga ao longo do tempo</div>
+    <div class="card" id="exAnalyticsWeightChart" style="margin-bottom:16px;"></div>
+
+    <div class="section-title">Peso médio · repetições médias</div>
+    <div class="grid grid-2" style="margin-bottom:16px;">
+      <div class="stat-card"><span class="stat-label">Peso médio</span><span class="stat-value" style="font-size:16px;">${avgWeight}kg</span></div>
+      <div class="stat-card"><span class="stat-label">Reps médias</span><span class="stat-value" style="font-size:16px;">${avgReps}</span></div>
+    </div>
+
+    ${plateau ? `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="list-row-title">⚠️ Possível platô</div>
+        <p style="font-size:12.5px;color:var(--text-dim);margin:4px 0 10px;">Sem progresso há ${plateau.sessions} sessões (${plateau.reason}).</p>
+        <div class="chip-row">${plateau.suggestions.map(s=>`<span class="chip">${s}</span>`).join('')}</div>
+      </div>
+    ` : ''}
+    ${overload ? `<div class="card" style="margin-bottom:16px;"><div class="list-row-title">💪 Pronto pra evoluir</div><p style="font-size:12.5px;color:var(--text-dim);margin:4px 0 0;">${overload.message}</p></div>` : ''}
+
+    ${prs.length ? `
+      <div class="section-title">Recordes</div>
+      <div style="margin-bottom:16px;">
+        ${prs.map(pr=>`<div class="card mini-preview-row" style="margin-bottom:8px;"><div class="list-row-icon">🏆</div><div><div style="font-weight:700;font-size:13.5px;">${pr.label.split('·')[0].trim()}</div><div style="color:var(--text-dim);font-size:12px;">${pr.value}${pr.date?' · '+fmtDate(pr.date):''}</div></div></div>`).join('')}
+      </div>
+    ` : ''}
+
+    <div class="section-title">Últimas sessões</div>
+    <div>
+      ${[...logs].reverse().slice(0,6).map(l=>`
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-top:1px solid var(--border);">
+          <span style="color:var(--text-dim);">${fmtDate(l.date)}</span>
+          <span style="font-weight:700;">${l.weight}kg × ${l.reps||0}</span>
+        </div>
+      `).join('')}
+    </div>
+  `);
+  renderLineChart(document.getElementById('exAnalyticsWeightChart'), logs.map(l=>({label:fmtDate(l.date).slice(0,5), value:l.weight})));
+}
+
+/* ======================================================================
+   VIEW: HISTÓRICO
+   ====================================================================== */
+/* ======================================================================
+   PROGRESSO — agrupa Estatísticas, Histórico e Conquistas em sub-abas
+   ====================================================================== */
+let currentProgressoTab = 'geral';
+
+function renderProgresso(){
+  const wrap = document.getElementById('viewWrap');
+  const tabs = [
+    {id:'geral', label:'Visão Geral'},
+    {id:'analise', label:'Análise'},
+    {id:'corpo', label:'Corpo'},
+    {id:'historico', label:'Histórico'},
+    {id:'conquistas', label:'Conquistas'},
+  ];
+  wrap.innerHTML = `
+    <div class="view-header"><div class="greeting"><h1>Progresso</h1><p>Sua evolução em números, sessões e conquistas.</p></div></div>
+    <div class="tabs" id="progressoTabs">
+      ${tabs.map(t=>`<button class="tab-btn ${currentProgressoTab===t.id?'active':''}" data-progressotab="${t.id}">${t.label}</button>`).join('')}
+    </div>
+    <div id="progressoTabContent"></div>
+  `;
+  document.querySelectorAll('[data-progressotab]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ currentProgressoTab=btn.dataset.progressotab; renderProgresso(); });
+  });
+  const renderers = {geral: renderStats, analise: renderAnalysis, corpo: renderBodyProgress, historico: renderHistory, conquistas: renderConquistas};
+  renderers[currentProgressoTab]();
+  makeInteractiveElementsAccessible(document.getElementById('progressoTabContent'));
+}
+
+/* ======================================================================
+   ANÁLISE — sistema inteligente de progresso (Analytics, ver analytics.js)
+   ====================================================================== */
+function renderAnalysis(){
+  const wrap = document.getElementById('progressoTabContent');
+  const ws = Analytics.weeklySummary();
+  const ms = Analytics.monthlySummary();
+  const balance = Analytics.muscleBalance();
+  const recovery = Analytics.recoveryInsight();
+  const plateaus = Analytics.allPlateaus();
+  const overloads = Analytics.allOverloadSuggestions();
+  const insights = Analytics.smartInsights();
+  const prs = Analytics.detectPRs().slice(0,5);
+
+  const statusLabel = {balanced:'Equilibrado', under:'Pouco treinado', over:'Muito treinado', none:'Sem treino recente'};
+  const statusColor = {balanced:'var(--green)', under:'var(--text-dim)', over:'var(--red)', none:'var(--text-faint)'};
+
+  wrap.innerHTML = `
+    ${recovery ? `<div class="analysis-banner ${recovery.level}">${recovery.level==='warning'?'⚠️':'💡'} ${recovery.message}</div>` : ''}
+
+    ${insights.length ? `
+      <div class="section-title" style="margin-top:0;">Insights</div>
+      <div style="margin-bottom:20px;">
+        ${insights.map(txt=>`<div class="card insight-card">${txt}</div>`).join('')}
+      </div>
+    ` : ''}
+
+    <div class="section-title" style="margin-top:0;">Resumo da semana</div>
+    <div class="grid grid-3" style="margin-bottom:20px;">
+      <div class="card stat-card"><span class="stat-label">Treinos</span><span class="stat-value">${ws.workouts}</span></div>
+      <div class="card stat-card"><span class="stat-label">Volume</span><span class="stat-value">${ws.volume}<span style="font-size:12px;">kg</span></span></div>
+      <div class="card stat-card"><span class="stat-label">Kcal</span><span class="stat-value">${ws.calories}</span></div>
+      <div class="card stat-card"><span class="stat-label">Duração média</span><span class="stat-value">${ws.avgDuration}<span style="font-size:12px;">min</span></span></div>
+      <div class="card stat-card"><span class="stat-label">Grupo principal</span><span class="stat-value" style="font-size:16px;">${ws.topMuscle||'—'}</span></div>
+      <div class="card stat-card"><span class="stat-label">Novos recordes</span><span class="stat-value">${ws.newPRs}</span></div>
+    </div>
+
+    <div class="section-title">Resumo do mês</div>
+    <div class="grid grid-3" style="margin-bottom:20px;">
+      <div class="card stat-card"><span class="stat-label">Treinos</span><span class="stat-value">${ms.workouts}</span></div>
+      <div class="card stat-card"><span class="stat-label">Volume total</span><span class="stat-value">${ms.volume}<span style="font-size:12px;">kg</span></span></div>
+      <div class="card stat-card"><span class="stat-label">Peso corporal</span><span class="stat-value" style="font-size:16px;">${ms.weightTrend!=null?`${ms.weightTrend>0?'+':''}${ms.weightTrend.toFixed(1)}kg`:'—'}</span></div>
+    </div>
+    ${ms.topExercises.length ? `
+      <div class="card" style="margin-bottom:20px;">
+        <div class="list-row-title" style="margin-bottom:10px;">Exercícios mais treinados no mês</div>
+        ${ms.topExercises.map(ex=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-top:1px solid var(--border);"><span>${ex.name}</span><span style="color:var(--text-dim);">${ex.volume}kg</span></div>`).join('')}
+      </div>
+    `:''}
+
+    <div class="section-title">Equilíbrio muscular <span style="font-size:11px;color:var(--text-faint);font-weight:400;">(últimas 4 semanas)</span></div>
+    <div class="card" style="margin-bottom:20px;">
+      ${balance.map(b=>`
+        <div class="balance-row">
+          <span class="balance-label">${b.label}</span>
+          <div class="balance-track"><div class="balance-fill" style="width:${Math.min(100,b.weeklySets/14*100)}%;background:${statusColor[b.status]};"></div></div>
+          <span class="balance-status" style="color:${statusColor[b.status]};">${statusLabel[b.status]}</span>
+        </div>
+      `).join('')}
+    </div>
+
+    ${plateaus.length ? `
+      <div class="section-title">Possíveis platôs</div>
+      <div style="margin-bottom:20px;">
+        ${plateaus.map(p=>`
+          <div class="card" style="margin-bottom:10px;">
+            <div class="list-row-title">⚠️ ${p.exerciseName}</div>
+            <p style="font-size:12.5px;color:var(--text-dim);margin:4px 0 10px;">Sem progresso há ${p.sessions} sessões (${p.reason}).</p>
+            <div class="chip-row">${p.suggestions.map(s=>`<span class="chip">${s}</span>`).join('')}</div>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+
+    ${overloads.length ? `
+      <div class="section-title">Pronto pra evoluir</div>
+      <div style="margin-bottom:20px;">
+        ${overloads.map(o=>`
+          <div class="card" style="margin-bottom:10px;">
+            <div class="list-row-title">💪 ${o.exerciseName}</div>
+            <p style="font-size:12.5px;color:var(--text-dim);margin:4px 0 0;">${o.message}</p>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+
+    ${prs.length ? `
+      <div class="section-title">Últimos recordes</div>
+      <div>
+        ${prs.map(pr=>`
+          <div class="card mini-preview-row" style="margin-bottom:10px;">
+            <div class="list-row-icon">🏆</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:14px;">${pr.label}</div>
+              <div style="color:var(--text-dim);font-size:12.5px;">${pr.value}${pr.date?' · '+fmtDate(pr.date):''}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : `<div class="empty-state"><span class="emoji">🏆</span>Seus recordes aparecem aqui conforme você treina.</div>`}
+  `;
+}
+
+function renderHistory(){
+  const wrap = document.getElementById('progressoTabContent');
+  wrap.innerHTML = `
+    <div class="chip-row" style="margin-bottom:18px;">
+      ${['semana','mes','ano','tudo'].map(f=>`<button class="chip ${historyFilter===f?'active':''}" data-hfilter="${f}">${({semana:'Semana',mes:'Mês',ano:'Ano',tudo:'Tudo'})[f]}</button>`).join('')}
+    </div>
+    <div id="historyList"></div>
+  `;
+  document.querySelectorAll('[data-hfilter]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ historyFilter=btn.dataset.hfilter; renderHistory(); });
+  });
+  renderHistoryList();
+}
+
+function renderHistoryList(){
+  const list = document.getElementById('historyList');
+  const now = new Date();
+  let cutoff = new Date(0);
+  if(historyFilter==='semana') cutoff = startOfWeek(now);
+  else if(historyFilter==='mes'){ cutoff = new Date(now.getFullYear(), now.getMonth(),1); }
+  else if(historyFilter==='ano'){ cutoff = new Date(now.getFullYear(),0,1); }
+
+  const sessions = [...state.history].filter(s=> new Date(s.date+'T00:00:00') >= cutoff).sort((a,b)=>b.date.localeCompare(a.date));
+  if(sessions.length===0){ list.innerHTML = `<div class="empty-state"><span class="emoji">🗂️</span>Nenhum treino registrado neste período.</div>`; return; }
+  list.innerHTML = sessions.map(s=>`
+    <div class="list-row" data-session="${s.id}" style="cursor:pointer;">
+      <div class="list-row-icon">${MUSCLE_ICONS[getTemplate(s.templateId)?.muscle]||'🏋️'}</div>
+      <div class="list-row-body">
+        <div class="list-row-title">${s.name}</div>
+        <div class="list-row-sub">${fmtDate(s.date)} · ${s.duration}min · ${s.volume}kg volume · ${s.calories}kcal</div>
+      </div>
+      <div style="color:var(--text-dim);">→</div>
+    </div>`).join('');
+  list.querySelectorAll('[data-session]').forEach(row=>{
+    row.addEventListener('click', ()=>openSessionDetail(row.dataset.session));
+  });
+}
+
+function openSessionDetail(id){
+  const s = state.history.find(x=>x.id===id);
+  if(!s) return;
+  openModal(`
+    <h2>${s.name}</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:14px;">${fmtDate(s.date)} · ${s.duration} min</p>
+    <div class="grid grid-3" style="margin-bottom:16px;">
+      <div class="card stat-card"><span class="stat-label">Volume</span><span class="stat-value" style="font-size:18px;">${s.volume}kg</span></div>
+      <div class="card stat-card"><span class="stat-label">Calorias</span><span class="stat-value" style="font-size:18px;">${s.calories}</span></div>
+      <div class="card stat-card"><span class="stat-label">Duração</span><span class="stat-value" style="font-size:18px;">${s.duration}min</span></div>
+    </div>
+    ${s.exercisesLog.map(el=>{
+      const e = findExercise(el.exerciseId);
+      return `<div class="list-row" style="display:block;">
+        <div class="list-row-title" style="margin-bottom:6px;">${e?e.name:el.exerciseId}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${el.sets.map((st,i)=>`<span class="chip">Série ${i+1}: ${st.weight}kg × ${st.reps}</span>`).join('')}
+        </div>
+      </div>`;
+    }).join('')}
+  `);
+}
+
+/* ======================================================================
+   VIEW: ESTATÍSTICAS
+   ====================================================================== */
+function renderStats(){
+  const wrap = document.getElementById('progressoTabContent');
+  const maxLoad = Math.max(0, ...Object.values(state.exerciseLoads).flat().map(l=>l.weight));
+  const lvl = xpProgress(state.xp||0);
+  const insights = generateInsights();
+  const missions = getWeeklyMissions();
+  const lw = lastWeekSummary();
+
+  wrap.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+      <button class="btn btn-primary" id="quickWeightBtn">⚖️ Registrar peso</button>
+    </div>
+
+    <div class="card hero-card" style="margin-bottom:20px;">
+      <div class="hero-eyebrow">Nível ${lvl.level}</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+        <span style="font-family:var(--font-display);font-weight:800;font-size:20px;">${state.xp||0} XP</span>
+        <span style="font-size:12px;color:var(--text-dim);">Faltam ${lvl.next-(state.xp||0)} XP pro nível ${lvl.level+1}</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${lvl.pct}%;"></div></div>
+    </div>
+
+    ${insights.length?`
+      <div class="section-title">Insights</div>
+      <div style="margin-bottom:20px;">
+        ${insights.map(i=>`<div class="card insight-card ${i.tone==='success'?'insight-success':''}">${i.text}</div>`).join('')}
+      </div>
+    `:''}
+
+    <div class="section-title">Missões da semana</div>
+    <div style="margin-bottom:20px;">
+      ${missions.map(m=>`
+        <div class="card mission-card">
+          <div style="flex:1;min-width:0;">
+            <div class="list-row-title">${m.label}</div>
+            <div class="progress-track" style="margin-top:8px;"><div class="progress-fill" style="width:${Math.min(100,m.progress/m.total*100)}%;"></div></div>
+          </div>
+          ${m.claimed
+            ?`<span class="chip active" style="flex-shrink:0;">✓ +${m.xp} XP</span>`
+            :m.done?`<button class="btn btn-primary" data-claim="${m.id}" style="flex-shrink:0;">Resgatar +${m.xp} XP</button>`
+            :`<span class="chip" style="flex-shrink:0;">${m.progress}/${m.total}</span>`}
+        </div>
+      `).join('')}
+    </div>
+
+    ${lw.count>0?`
+      <div class="section-title">Resumo da semana passada</div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="grid grid-3">
+          <div class="stat-card"><span class="stat-label">Treinos</span><span class="stat-value">${lw.count}</span></div>
+          <div class="stat-card"><span class="stat-label">Volume total</span><span class="stat-value">${lw.volume}kg</span></div>
+          <div class="stat-card"><span class="stat-label">Peso</span><span class="stat-value">${lw.weightStart&&lw.weightEnd?`${lw.weightEnd>lw.weightStart?'+':''}${(lw.weightEnd-lw.weightStart).toFixed(1)}kg`:'—'}</span></div>
+        </div>
+      </div>
+    `:''}
+
+    <div class="grid grid-4" style="margin-bottom:10px;">
+      <div class="card stat-card"><span class="stat-label">Peso inicial</span><span class="stat-value">${state.user.startWeight||state.user.weight}kg</span></div>
+      <div class="card stat-card"><span class="stat-label">Streak atual</span><span class="stat-value">🔥 ${computeStreak(state.completedDates)}</span></div>
+      <div class="card stat-card"><span class="stat-label">Total treinado</span><span class="stat-value">${state.history.length}</span><span class="stat-sub">treinos</span></div>
+      <div class="card stat-card"><span class="stat-label">Maior carga</span><span class="stat-value">${maxLoad}kg</span></div>
+    </div>
+
+    <div class="section-title">Treinos por semana (últimas 8 semanas)</div>
+    <div class="card" id="chartWorkoutsWeek"></div>
+
+    <div class="section-title">Peso corporal</div>
+    <div class="card" id="chartWeight"></div>
+
+    <div class="section-title">Medidas corporais</div>
+    <div class="card" id="measurementsCard"></div>
+
+    <div class="section-title">Carga levantada (últimas sessões)</div>
+    <div class="card" id="chartVolume"></div>
+
+    <div class="section-title">Comparação mensal de volume</div>
+    <div class="card" id="chartMonthlyVolume"></div>
+  `;
+  renderBarChart(document.getElementById('chartWorkoutsWeek'), workoutsPerWeekData());
+  renderLineChart(document.getElementById('chartWeight'), weightSeriesData());
+  renderBarChart(document.getElementById('chartVolume'), volumeSeriesData());
+  renderBarChart(document.getElementById('chartMonthlyVolume'), monthlyVolumeData());
+  renderMeasurementsCard();
+  document.getElementById('quickWeightBtn').addEventListener('click', openQuickWeightModal);
+  wrap.querySelectorAll('[data-claim]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ claimMission(btn.dataset.claim); renderStats(); });
+  });
+}
+
+function monthlyVolumeData(){
+  const now = new Date();
+  const months = [];
+  for(let i=5;i>=0;i--){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const next = new Date(now.getFullYear(), now.getMonth()-i+1, 1);
+    const vol = state.history.filter(h=>{const hd=new Date(h.date+'T00:00:00'); return hd>=d && hd<next;}).reduce((a,h)=>a+h.volume,0);
+    months.push({label:d.toLocaleDateString('pt-BR',{month:'short'}), value:vol});
+  }
+  return months;
+}
+
+function openQuickWeightModal(){
+  openModal(`
+    <h2 style="margin-bottom:4px;">Registrar peso</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">Peso atual: ${state.user.weight}kg</p>
+    <div class="field" id="quickWeightField"><label>Novo peso (kg)</label><input type="number" step="0.1" id="quickWeightInput" value="${state.user.weight}" autofocus></div>
+    <button class="btn btn-primary btn-block" id="quickWeightSave">Salvar</button>
+  `);
+  document.getElementById('quickWeightSave').addEventListener('click', ()=>{
+    const field = document.getElementById('quickWeightField');
+    const w = Number(document.getElementById('quickWeightInput').value);
+    field.querySelector('.field-error')?.remove();
+    if(!w || w<=0){
+      field.classList.add('invalid');
+      field.insertAdjacentHTML('beforeend', `<span class="field-error">Informe um peso válido, maior que zero.</span>`);
+      return;
+    }
+    state.weightLog.push({date:todayKey(), weight:w});
+    state.user.weight = w;
+    persist();
+    closeModal();
+    showToast('Peso registrado', `${w}kg salvo no seu histórico.`, '⚖️');
+    renderStats();
+  });
+}
+
+function renderMeasurementsCard(){
+  const card = document.getElementById('measurementsCard');
+  const log = [...(state.measurements||[])].sort((a,b)=>b.date.localeCompare(a.date));
+  card.innerHTML = `
+    <div class="field-row" style="align-items:flex-end;margin-bottom:14px;">
+      <div class="field" style="margin-bottom:0;"><label>Braço (cm)</label><input type="number" step="0.5" id="mArm"></div>
+      <div class="field" style="margin-bottom:0;"><label>Cintura (cm)</label><input type="number" step="0.5" id="mWaist"></div>
+    </div>
+    <div class="field-row" style="align-items:flex-end;margin-bottom:14px;">
+      <div class="field" style="margin-bottom:0;"><label>Quadril (cm)</label><input type="number" step="0.5" id="mHips"></div>
+      <div class="field" style="margin-bottom:0;"><label>Coxa (cm)</label><input type="number" step="0.5" id="mThigh"></div>
+    </div>
+    <button class="btn btn-ghost btn-block" id="mSaveBtn">Registrar medidas de hoje</button>
+    ${log.length===0?'':`
+      <div class="section-title" style="margin-top:18px;">Histórico</div>
+      <div>
+        ${log.slice(0,8).map(m=>`
+          <div class="list-row">
+            <div class="list-row-body">
+              <div class="list-row-title">${fmtDate(m.date)}</div>
+              <div class="list-row-sub">${[
+                m.arm?`Braço ${m.arm}cm`:null,
+                m.waist?`Cintura ${m.waist}cm`:null,
+                m.hips?`Quadril ${m.hips}cm`:null,
+                m.thigh?`Coxa ${m.thigh}cm`:null,
+              ].filter(Boolean).join(' · ')}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `}
+  `;
+  document.getElementById('mSaveBtn').addEventListener('click', ()=>{
+    const entry = {
+      date: todayKey(),
+      arm: Number(document.getElementById('mArm').value)||null,
+      waist: Number(document.getElementById('mWaist').value)||null,
+      hips: Number(document.getElementById('mHips').value)||null,
+      thigh: Number(document.getElementById('mThigh').value)||null,
+    };
+    if(!entry.arm && !entry.waist && !entry.hips && !entry.thigh){
+      showToast('Nada pra salvar', 'Preencha ao menos uma medida.', '⚠️');
+      return;
+    }
+    state.measurements = state.measurements || [];
+    state.measurements.push(entry);
+    persist();
+    showToast('Medidas registradas', 'Seu histórico foi atualizado.', '📏');
+    renderMeasurementsCard();
+  });
+}
+
+function weeklyVolume(){
+  const start = startOfWeek(new Date());
+  return state.history.filter(h=>new Date(h.date+'T00:00:00')>=start).reduce((a,h)=>a+h.volume,0);
+}
+
+function workoutsPerWeekData(){
+  const weeks = [];
+  for(let i=7;i>=0;i--){
+    const s = startOfWeek(new Date()); s.setDate(s.getDate()-i*7);
+    const e = new Date(s); e.setDate(s.getDate()+7);
+    const count = state.history.filter(h=>{ const d=new Date(h.date+'T00:00:00'); return d>=s && d<e; }).length;
+    weeks.push({label: `${s.getDate()}/${s.getMonth()+1}`, value: count});
+  }
+  return weeks;
+}
+
+function weightSeriesData(){
+  const log = [...(state.weightLog||[])].sort((a,b)=>a.date.localeCompare(b.date));
+  if(log.length===0 && state.user.weight){
+    return [{label:'Início', value:state.user.startWeight||state.user.weight},{label:'Hoje', value:state.user.weight}];
+  }
+  return log.map(l=>({label:fmtDate(l.date).slice(0,5), value:l.weight}));
+}
+
+function volumeSeriesData(){
+  const recent = [...state.history].sort((a,b)=>a.date.localeCompare(b.date)).slice(-8);
+  return recent.map(h=>({label:fmtDate(h.date).slice(0,5), value:h.volume}));
+}
+
+/* ======================================================================
+   VIEW: PERFIL (tabs: perfil, metas, progresso, conquistas, config)
+   ====================================================================== */
+function renderProfile(){
+  const wrap = document.getElementById('viewWrap');
+  const tabs = [
+    {id:'perfil', label:'Perfil'},
+    {id:'metas', label:'Metas'},
+    {id:'config', label:'Configurações'},
+  ];
+  if(!['perfil','metas','config'].includes(currentProfileTab)) currentProfileTab='perfil';
+  wrap.innerHTML = `
+    <div class="view-header"><div class="greeting"><h1>Perfil</h1><p>Suas informações e preferências.</p></div></div>
+    <div class="tabs" id="profileTabs">
+      ${tabs.map(t=>`<button class="tab-btn ${currentProfileTab===t.id?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
+    </div>
+    <div id="profileTabContent"></div>
+  `;
+  document.querySelectorAll('[data-tab]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ currentProfileTab=btn.dataset.tab; renderProfile(); });
+  });
+  const renderers = {
+    perfil: renderTabPerfil, metas: renderTabMetas, config: renderTabConfig,
+  };
+  renderers[currentProfileTab]();
+  makeInteractiveElementsAccessible(document.getElementById('profileTabContent'));
+}
+
+function renderTabPerfil(){
+  const c = document.getElementById('profileTabContent');
+  const u = state.user;
+  c.innerHTML = `
+    <div class="card">
+      <div class="field"><label>Nome</label><input type="text" id="pName" value="${escapeHtml(u.name)}"></div>
+      <div class="field-row">
+        <div class="field"><label>Altura (cm)</label><input type="number" id="pHeight" value="${u.height}"></div>
+        <div class="field"><label>Peso (kg)</label><input type="number" step="0.1" id="pWeight" value="${u.weight}"></div>
+      </div>
+      <div class="field"><label>Objetivo</label>
+        <select id="pGoal">
+          ${['hipertrofia','emagrecimento','forca','condicionamento'].map(g=>`<option value="${g}" ${u.goal===g?'selected':''}>${capitalize(g==='forca'?'força':g)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Dias disponíveis/semana</label><input type="number" min="1" max="7" id="pDays" value="${u.availableDays}"></div>
+        <div class="field"><label>Tempo médio por treino (min)</label><input type="number" id="pTime" value="${u.avgWorkoutTime}"></div>
+      </div>
+      <button class="btn btn-primary btn-block" id="saveProfile">Salvar alterações</button>
+    </div>
+  `;
+  document.getElementById('saveProfile').addEventListener('click', ()=>{
+    const newWeight = Number(document.getElementById('pWeight').value)||u.weight;
+    if(newWeight !== u.weight){
+      state.weightLog.push({date:todayKey(), weight:newWeight});
+    }
+    state.user.name = document.getElementById('pName').value.trim()||u.name;
+    state.user.height = Number(document.getElementById('pHeight').value)||u.height;
+    state.user.weight = newWeight;
+    state.user.goal = document.getElementById('pGoal').value;
+    state.user.availableDays = Number(document.getElementById('pDays').value)||u.availableDays;
+    state.user.avgWorkoutTime = Number(document.getElementById('pTime').value)||u.avgWorkoutTime;
+    persist();
+    showToast('Perfil atualizado', 'Suas informações foram salvas.', '✅');
+    renderNavLists();
+  });
+}
+
+function renderTabMetas(){
+  const c = document.getElementById('profileTabContent');
+  c.innerHTML = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="field-row" style="align-items:flex-end;">
+        <div class="field" style="margin-bottom:0;"><label>Nova meta</label><input type="text" id="newGoalInput" placeholder="Ex: Treinar 5 dias"></div>
+        <button class="btn btn-primary" id="addGoalBtn" style="height:44px;">Adicionar</button>
+      </div>
+    </div>
+    <div id="goalsList"></div>
+  `;
+  document.getElementById('addGoalBtn').addEventListener('click', ()=>{
+    const input = document.getElementById('newGoalInput');
+    if(!input.value.trim()) return;
+    state.goals.push({id:cryptoId(), text:input.value.trim(), done:false, category:'geral'});
+    persist();
+    renderTabMetas();
+  });
+  renderGoalsList();
+}
+
+function renderGoalsList(){
+  const list = document.getElementById('goalsList');
+  if(state.goals.length===0){ list.innerHTML = `<div class="empty-state"><span class="emoji">🎯</span>Crie sua primeira meta.</div>`; return; }
+  list.innerHTML = state.goals.map(g=>`
+    <div class="list-row goal-row ${g.done?'done':''}">
+      <div class="goal-check" data-toggle="${g.id}" style="cursor:pointer;">${g.done?'✓':''}</div>
+      <div class="list-row-body"><div class="list-row-title">${escapeHtml(g.text)}</div></div>
+      <button class="icon-btn" data-delgoal="${g.id}" aria-label="Remover meta">${icon('trash-2',{size:15})}</button>
+    </div>`).join('');
+  list.querySelectorAll('[data-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const g = state.goals.find(g=>g.id===el.dataset.toggle);
+      g.done = !g.done;
+      persist();
+      renderGoalsList();
+    });
+  });
+  list.querySelectorAll('[data-delgoal]').forEach(el=>{
+    el.addEventListener('click', ()=>{ state.goals = state.goals.filter(g=>g.id!==el.dataset.delgoal); persist(); renderGoalsList(); });
+  });
+}
+
+/* ======================================================================
+   CORPO — fotos de progresso, medidas expandidas, antes/depois,
+   gráficos, metas e linha do tempo (lógica em photos.js)
+   ====================================================================== */
+let bodyPhotoAngle = 'front';
+let bodyChartMetric = 'weight';
+let bodyChartRange = '90d';
+const ANGLE_LABELS = {front:'Frente', side:'Lado', back:'Costas', custom:'Outro'};
+
+function renderBodyProgress(){
+  const wrap = document.getElementById('progressoTabContent');
+  const newMilestones = BodyProgress.checkMilestones();
+  newMilestones.forEach(ms=>pushNotification('Marco desbloqueado!', ms.label, ms.emoji));
+  const insights = BodyProgress.bodyInsights();
+  const photos = BodyProgress.photosByAngle(bodyPhotoAngle, false);
+  const measurements = [...(state.measurements||[])].sort((a,b)=>b.date.localeCompare(a.date));
+  const goals = state.bodyGoals||[];
+
+  wrap.innerHTML = `
+    ${insights.length ? `
+      <div class="section-title" style="margin-top:0;">Insights</div>
+      <div style="margin-bottom:20px;">${insights.map(t=>`<div class="card insight-card insight-success">${t}</div>`).join('')}</div>
+    ` : ''}
+
+    <div class="section-title" style="margin-top:0;">Fotos de progresso</div>
+    <div class="chip-row" style="margin-bottom:12px;">
+      ${Object.keys(ANGLE_LABELS).map(a=>`<button class="chip ${bodyPhotoAngle===a?'active':''}" data-angle="${a}">${ANGLE_LABELS[a]}</button>`).join('')}
+    </div>
+    <div class="photo-grid" id="photoGrid">
+      <label class="photo-add-tile" for="photoUploadInput" tabindex="0" role="button" aria-label="Adicionar foto">
+        ${icon('plus',{size:22})}<span>Adicionar</span>
+      </label>
+      <input type="file" id="photoUploadInput" accept="image/*" capture="environment" style="display:none;">
+      ${photos.map(p=>`
+        <div class="photo-tile" data-photo="${p.id}">
+          <img src="${p.image}" alt="Foto de progresso — ${ANGLE_LABELS[p.angle]}, ${fmtDate(p.date)}" loading="lazy">
+          <span class="photo-date">${fmtDate(p.date)}</span>
+        </div>
+      `).join('')}
+    </div>
+    ${photos.length===0?`<p style="font-size:12.5px;color:var(--text-dim);margin:-4px 0 20px;">Nenhuma foto de "${ANGLE_LABELS[bodyPhotoAngle]}" ainda.</p>`:''}
+
+    <div class="section-title">Antes &amp; Depois</div>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="field-row" style="align-items:flex-end;">
+        <div class="field" style="margin-bottom:0;"><label>Data 1</label><input type="date" id="compareDateA"></div>
+        <div class="field" style="margin-bottom:0;"><label>Data 2</label><input type="date" id="compareDateB"></div>
+      </div>
+      <button class="btn btn-primary btn-block" id="compareBtn" style="margin-top:12px;">Comparar</button>
+      <div id="compareResult"></div>
+    </div>
+
+    <div class="section-title">Medidas corporais</div>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="field-row"><div class="field"><label>Peso (kg)</label><input type="number" step="0.1" id="bmWeight"></div><div class="field"><label>% Gordura</label><input type="number" step="0.1" id="bmBodyFat"></div></div>
+      <div class="field-row"><div class="field"><label>Peito (cm)</label><input type="number" step="0.5" id="bmChest"></div><div class="field"><label>Cintura (cm)</label><input type="number" step="0.5" id="bmWaist"></div></div>
+      <div class="field-row"><div class="field"><label>Quadril (cm)</label><input type="number" step="0.5" id="bmHip"></div><div class="field"><label>Ombros (cm)</label><input type="number" step="0.5" id="bmShoulders"></div></div>
+      <div class="field-row"><div class="field"><label>Pescoço (cm)</label><input type="number" step="0.5" id="bmNeck"></div><div class="field"></div></div>
+      <div class="field-row"><div class="field"><label>Braço esq. (cm)</label><input type="number" step="0.5" id="bmArmL"></div><div class="field"><label>Braço dir. (cm)</label><input type="number" step="0.5" id="bmArmR"></div></div>
+      <div class="field-row"><div class="field"><label>Antebraço esq. (cm)</label><input type="number" step="0.5" id="bmForearmL"></div><div class="field"><label>Antebraço dir. (cm)</label><input type="number" step="0.5" id="bmForearmR"></div></div>
+      <div class="field-row"><div class="field"><label>Coxa esq. (cm)</label><input type="number" step="0.5" id="bmThighL"></div><div class="field"><label>Coxa dir. (cm)</label><input type="number" step="0.5" id="bmThighR"></div></div>
+      <div class="field-row"><div class="field"><label>Panturrilha esq. (cm)</label><input type="number" step="0.5" id="bmCalfL"></div><div class="field"><label>Panturrilha dir. (cm)</label><input type="number" step="0.5" id="bmCalfR"></div></div>
+      <button class="btn btn-ghost btn-block" id="bmSaveBtn" style="margin-top:6px;">Registrar medidas de hoje</button>
+      ${measurements.length ? `
+        <div class="section-title" style="margin-top:18px;">IMC · Massa magra (mais recente)</div>
+        <div class="grid grid-2">
+          <div class="stat-card"><span class="stat-label">IMC</span><span class="stat-value" style="font-size:16px;">${BodyProgress.computeBMI(measurements[0].weight)||'—'}</span></div>
+          <div class="stat-card"><span class="stat-label">Massa magra</span><span class="stat-value" style="font-size:16px;">${BodyProgress.computeLeanMass(measurements[0].weight,measurements[0].bodyFat)||'—'}${BodyProgress.computeLeanMass(measurements[0].weight,measurements[0].bodyFat)?'kg':''}</span></div>
+        </div>
+      ` : ''}
+    </div>
+
+    <div class="section-title">Gráficos de evolução</div>
+    <div class="chip-row" style="margin-bottom:8px;">
+      ${Object.keys(BodyProgress.METRIC_LABELS).map(m=>`<button class="chip ${bodyChartMetric===m?'active':''}" data-metric="${m}">${BodyProgress.METRIC_LABELS[m]}</button>`).join('')}
+    </div>
+    <div class="chip-row" style="margin-bottom:12px;">
+      ${Object.entries({'7d':'7 dias','30d':'30 dias','90d':'90 dias','1y':'1 ano',all:'Tudo'}).map(([k,l])=>`<button class="chip ${bodyChartRange===k?'active':''}" data-range="${k}" style="font-size:11px;">${l}</button>`).join('')}
+    </div>
+    <div class="card" id="bodyChartCard" style="margin-bottom:20px;"></div>
+
+    <div class="section-title">Metas corporais</div>
+    <div style="margin-bottom:20px;">
+      ${goals.map(g=>`
+        <div class="card" style="margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span class="list-row-title">${g.label}</span>
+            <button class="icon-btn" data-delgoal2="${g.id}" aria-label="Remover meta">${icon('trash-2',{size:15})}</button>
+          </div>
+          <div class="progress-track" style="margin-bottom:6px;"><div class="progress-fill" style="width:${BodyProgress.goalProgress(g)}%;"></div></div>
+          <p style="font-size:12px;color:var(--text-dim);">${BodyProgress.goalProgress(g)}% concluído</p>
+        </div>
+      `).join('')}
+      <button class="btn btn-ghost btn-block" id="newBodyGoalBtn">+ Nova meta corporal</button>
+    </div>
+
+    <div class="section-title">Linha do tempo</div>
+    <div id="timelineFeed"></div>
+  `;
+
+  wireBodyProgressEvents();
+  renderBodyChart();
+  renderTimelineFeed();
+}
+
+function wireBodyProgressEvents(){
+  document.querySelectorAll('[data-angle]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ bodyPhotoAngle=btn.dataset.angle; renderBodyProgress(); });
+  });
+
+  const uploadInput = document.getElementById('photoUploadInput');
+  uploadInput.addEventListener('change', async ()=>{
+    const file = uploadInput.files[0];
+    if(!file) return;
+    let angle = bodyPhotoAngle, customLabel = '';
+    if(angle==='custom'){
+      customLabel = prompt('Nome dessa foto (ex: "Pose de costas relaxado"):','')||'Personalizada';
+    }
+    const tile = document.querySelector('.photo-add-tile');
+    const tileOriginalHtml = tile ? tile.innerHTML : '';
+    if(tile){ tile.innerHTML = `<div class="tile-spinner"></div><span>Processando...</span>`; tile.style.pointerEvents='none'; }
+    try{
+      const dataUrl = await BodyProgress.compressImage(file, 900, 0.72);
+      const photo = {
+        id:cryptoId(), date:todayKey(), angle, customLabel,
+        weight: state.user.weight, bodyFat: null, notes:'', image:dataUrl, hidden:false,
+      };
+      state.progressPhotos.push(photo);
+      const ok = persist();
+      if(!ok){
+        state.progressPhotos.pop();
+        showToast('Armazenamento cheio', 'Não foi possível salvar — apague fotos antigas ou libere espaço no navegador.', '⚠️');
+      } else {
+        showToast('Foto salva', 'Adicionada aos seus registros de progresso.', '✅');
+      }
+    }catch(err){
+      showToast('Erro ao processar foto', err.message||'Tente outra imagem.', '⚠️');
+      if(tile){ tile.innerHTML = tileOriginalHtml; tile.style.pointerEvents=''; }
+    }
+    uploadInput.value = '';
+    renderBodyProgress();
+  });
+
+  document.querySelectorAll('[data-photo]').forEach(tile=>{
+    tile.addEventListener('click', ()=>openPhotoDetail(tile.dataset.photo));
+  });
+
+  document.getElementById('compareBtn').addEventListener('click', renderCompareResult);
+
+  document.getElementById('bmSaveBtn').addEventListener('click', ()=>{
+    const val = id=>{ const v=document.getElementById(id).value; return v===''?null:Number(v); };
+    const entry = {
+      date: todayKey(),
+      weight: val('bmWeight'), bodyFat: val('bmBodyFat'),
+      chest: val('bmChest'), waist: val('bmWaist'), hip: val('bmHip'),
+      shoulders: val('bmShoulders'), neck: val('bmNeck'),
+      armL: val('bmArmL'), armR: val('bmArmR'),
+      forearmL: val('bmForearmL'), forearmR: val('bmForearmR'),
+      thighL: val('bmThighL'), thighR: val('bmThighR'),
+      calfL: val('bmCalfL'), calfR: val('bmCalfR'),
+    };
+    const hasAny = Object.keys(entry).some(k=>k!=='date' && entry[k]!=null);
+    if(!hasAny){ showToast('Nada pra salvar', 'Preencha ao menos uma medida.', '⚠️'); return; }
+    state.measurements = state.measurements||[];
+    state.measurements.push(entry);
+    if(entry.weight){ state.weightLog.push({date:todayKey(), weight:entry.weight}); state.user.weight = entry.weight; }
+    persist();
+    showToast('Medidas registradas', 'Seu histórico corporal foi atualizado.', '📏');
+    renderBodyProgress();
+  });
+
+  document.querySelectorAll('[data-metric]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ bodyChartMetric=btn.dataset.metric; renderBodyProgress(); });
+  });
+  document.querySelectorAll('[data-range]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ bodyChartRange=btn.dataset.range; renderBodyProgress(); });
+  });
+
+  document.querySelectorAll('[data-delgoal2]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      state.bodyGoals = state.bodyGoals.filter(g=>g.id!==btn.dataset.delgoal2);
+      persist();
+      renderBodyProgress();
+    });
+  });
+  document.getElementById('newBodyGoalBtn').addEventListener('click', openNewBodyGoalModal);
+}
+
+function renderBodyChart(){
+  const card = document.getElementById('bodyChartCard');
+  if(!card) return;
+  const series = BodyProgress.metricSeries(bodyChartMetric, bodyChartRange);
+  if(series.length<2){
+    card.innerHTML = `<div class="empty-state"><span class="emoji">📈</span>Registre medidas em pelo menos 2 datas diferentes pra ver o gráfico.</div>`;
+    return;
+  }
+  renderLineChart(card, series);
+}
+
+function renderCompareResult(){
+  const dateA = document.getElementById('compareDateA').value;
+  const dateB = document.getElementById('compareDateB').value;
+  const resultEl = document.getElementById('compareResult');
+  if(!dateA || !dateB){ showToast('Escolha as duas datas', 'Selecione data 1 e data 2 pra comparar.', '⚠️'); return; }
+  const c = BodyProgress.compare(dateA, dateB);
+  function diffRow(label, val, unit){
+    if(val==null) return '';
+    const sign = val>0?'+':'';
+    const color = (label==='Peso'||label==='Cintura') ? (val<0?'var(--green)':val>0?'var(--red)':'var(--text-dim)') : 'var(--text)';
+    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);"><span style="font-size:12.5px;color:var(--text-dim);">${label}</span><span style="font-weight:700;color:${color};">${sign}${val}${unit}</span></div>`;
+  }
+  resultEl.innerHTML = `
+    <div class="compare-photos">
+      <div class="compare-photo-col">
+        ${c.photoA?`<img src="${c.photoA.image}" alt="Foto de ${fmtDate(dateA)}">`:`<div class="compare-photo-empty">Sem foto</div>`}
+        <span>${fmtDate(dateA)}</span>
+      </div>
+      <div class="compare-photo-col">
+        ${c.photoB?`<img src="${c.photoB.image}" alt="Foto de ${fmtDate(dateB)}">`:`<div class="compare-photo-empty">Sem foto</div>`}
+        <span>${fmtDate(dateB)}</span>
+      </div>
+    </div>
+    <p style="text-align:center;font-size:12px;color:var(--text-dim);margin:10px 0;">${c.days} dias de diferença</p>
+    ${diffRow('Peso', c.weightDiff,'kg')}
+    ${diffRow('% Gordura', c.bodyFatDiff,'%')}
+    ${diffRow('Cintura', c.waistDiff,'cm')}
+    ${diffRow('Peito', c.chestDiff,'cm')}
+    ${diffRow('Braço', c.armDiff,'cm')}
+    ${diffRow('Coxa', c.thighDiff,'cm')}
+  `;
+}
+
+function openPhotoDetail(photoId){
+  const photo = (state.progressPhotos||[]).find(p=>p.id===photoId);
+  if(!photo) return;
+  openModal(`
+    <img src="${photo.image}" alt="Foto de progresso — ${ANGLE_LABELS[photo.angle]}, ${fmtDate(photo.date)}" style="width:100%;border-radius:var(--radius);margin-bottom:14px;">
+    <p style="font-size:13px;color:var(--text-dim);">${ANGLE_LABELS[photo.angle]}${photo.customLabel?' · '+photo.customLabel:''} · ${fmtDate(photo.date)}</p>
+    ${photo.weight?`<p style="font-size:13px;margin-top:6px;">Peso na época: <b>${photo.weight}kg</b></p>`:''}
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button class="btn btn-ghost" id="hidePhotoBtn" style="flex:1;">${photo.hidden?'Reexibir':'Ocultar'}</button>
+      <button class="btn btn-danger" id="deletePhotoBtn" style="flex:1;">Excluir</button>
+    </div>
+  `);
+  document.getElementById('hidePhotoBtn').addEventListener('click', ()=>{
+    photo.hidden = !photo.hidden;
+    persist();
+    closeModal();
+    renderBodyProgress();
+  });
+  document.getElementById('deletePhotoBtn').addEventListener('click', ()=>{
+    if(!confirm('Excluir essa foto? Essa ação não pode ser desfeita.')) return;
+    state.progressPhotos = state.progressPhotos.filter(p=>p.id!==photoId);
+    persist();
+    closeModal();
+    renderBodyProgress();
+  });
+}
+
+function openNewBodyGoalModal(){
+  const metricOptions = Object.keys(BodyProgress.METRIC_LABELS).map(m=>`<option value="${m}">${BodyProgress.METRIC_LABELS[m]}</option>`).join('');
+  openModal(`
+    <h2 style="margin-bottom:16px;">Nova meta corporal</h2>
+    <div class="field"><label>O que você quer acompanhar?</label><select id="goalMetric">${metricOptions}</select></div>
+    <div class="field-row">
+      <div class="field" id="goalStartField"><label>Valor atual</label><input type="number" step="0.1" id="goalStart"></div>
+      <div class="field" id="goalTargetField"><label>Meta</label><input type="number" step="0.1" id="goalTarget"></div>
+    </div>
+    <button class="btn btn-primary btn-block" id="saveGoalBtn">Criar meta</button>
+  `);
+  document.getElementById('saveGoalBtn').addEventListener('click', ()=>{
+    const metric = document.getElementById('goalMetric').value;
+    const startValue = Number(document.getElementById('goalStart').value);
+    const targetValue = Number(document.getElementById('goalTarget').value);
+    const startField = document.getElementById('goalStartField');
+    const targetField = document.getElementById('goalTargetField');
+    [startField, targetField].forEach(f=>{ f.classList.remove('invalid'); f.querySelector('.field-error')?.remove(); });
+    let hasError = false;
+    if(document.getElementById('goalStart').value===''||isNaN(startValue)){
+      startField.classList.add('invalid');
+      startField.insertAdjacentHTML('beforeend', `<span class="field-error">Obrigatório</span>`);
+      hasError = true;
+    }
+    if(document.getElementById('goalTarget').value===''||isNaN(targetValue)){
+      targetField.classList.add('invalid');
+      targetField.insertAdjacentHTML('beforeend', `<span class="field-error">Obrigatório</span>`);
+      hasError = true;
+    }
+    if(hasError) return;
+    state.bodyGoals = state.bodyGoals||[];
+    state.bodyGoals.push({
+      id:cryptoId(), metric, label:`${BodyProgress.METRIC_LABELS[metric]}: ${startValue} → ${targetValue}`,
+      startValue, targetValue, startDate:todayKey(),
+    });
+    persist();
+    closeModal();
+    showToast('Meta criada', 'Acompanhe o progresso na aba Corpo.', '🎯');
+    renderBodyProgress();
+  });
+}
+
+function renderTimelineFeed(){
+  const el = document.getElementById('timelineFeed');
+  if(!el) return;
+  const items = BodyProgress.timelineFeed().slice(0,20);
+  if(items.length===0){ el.innerHTML = `<div class="empty-state"><span class="emoji">🕓</span>Sua linha do tempo aparece aqui conforme você registra fotos e medidas.</div>`; return; }
+  el.innerHTML = items.map(item=>{
+    let icon_, text;
+    if(item.type==='photo'){ icon_='📸'; text=`Foto de progresso (${ANGLE_LABELS[item.data.angle]})`; }
+    else if(item.type==='measurement'){ icon_='📏'; text='Medidas registradas'; }
+    else if(item.type==='milestone'){ icon_=item.data.emoji; text=item.data.label; }
+    else if(item.type==='pr'){ icon_='🏆'; text=item.data.label; }
+    return `<div class="list-row"><div class="list-row-icon">${icon_}</div><div class="list-row-body"><div class="list-row-title">${text}</div><div class="list-row-sub">${fmtDate(item.date)}</div></div></div>`;
+  }).join('');
+}
+
+function renderConquistas(){
+  const c = document.getElementById('progressoTabContent');
+  c.innerHTML = `<div class="grid grid-4">
+    ${ACHIEVEMENTS.map(a=>{
+      const unlocked = state.unlockedAchievements.includes(a.id);
+      return `<div class="card ach-card ${unlocked?'unlocked':''}">
+        <span class="ach-emoji">${a.emoji}</span>
+        <div class="ach-name">${a.name}</div>
+        <div class="ach-desc">${a.desc}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function checkAchievements(){
+  const snapshot = {history:state.history, streak:computeStreak(state.completedDates), fullWeeksCompleted:state.fullWeeksCompleted||0};
+  ACHIEVEMENTS.forEach(a=>{
+    if(!state.unlockedAchievements.includes(a.id) && a.check(snapshot)){
+      state.unlockedAchievements.push(a.id);
+      addXp(100);
+      pushNotification('Conquista desbloqueada!', a.name, a.emoji);
+    }
+  });
+  persist();
+}
+
+/* ======================================================================
+   GAMIFICAÇÃO — XP, níveis e missões semanais
+   ====================================================================== */
+function xpForLevel(level){ return 50 * level * level; }
+
+function levelFromXp(xp){
+  let level = 1;
+  while(xp >= xpForLevel(level+1)) level++;
+  return level;
+}
+
+function xpProgress(xp){
+  const level = levelFromXp(xp);
+  const cur = xpForLevel(level);
+  const next = xpForLevel(level+1);
+  return {level, cur, next, pct: Math.min(100, Math.round((xp-cur)/(next-cur)*100))};
+}
+
+function addXp(amount){
+  const before = levelFromXp(state.xp||0);
+  state.xp = (state.xp||0) + amount;
+  persist();
+  const after = levelFromXp(state.xp);
+  if(after > before){
+    launchConfetti();
+    pushNotification('Você subiu de nível!', `Agora você é nível ${after}.`, '⭐');
+  }
+}
+
+function weekKey(d){ return todayKey(startOfWeek(d||new Date())); }
+
+function getWeeklyMissions(){
+  const wk = weekKey();
+  const claimed = state.missionsClaimed[wk] || [];
+  const start = startOfWeek(new Date());
+  const end = new Date(start.getTime()+7*86400000);
+
+  const daysThisWeek = Object.keys(state.completedDates).filter(k=>{
+    const d = new Date(k+'T00:00:00');
+    return d>=start && d<end;
+  }).length;
+
+  const newRecordThisWeek = Object.values(state.exerciseLoads).some(logs=>{
+    const sorted = [...logs].sort((a,b)=>a.date.localeCompare(b.date));
+    return sorted.some((l,i)=>{
+      if(i===0) return false;
+      const d = new Date(l.date+'T00:00:00');
+      if(d<start || d>=end) return false;
+      const prevMax = Math.max(0, ...sorted.slice(0,i).map(x=>x.weight));
+      return l.weight>prevMax;
+    });
+  });
+
+  const goalDoneThisWeek = state.goals.some(g=>g.done);
+
+  const defs = [
+    {id:'train3', label:'Treine 3 dias essa semana', progress:Math.min(daysThisWeek,3), total:3, done:daysThisWeek>=3, xp:40},
+    {id:'record', label:'Bata uma nova carga em algum exercício', progress:newRecordThisWeek?1:0, total:1, done:newRecordThisWeek, xp:40},
+    {id:'goal', label:'Conclua uma meta', progress:goalDoneThisWeek?1:0, total:1, done:goalDoneThisWeek, xp:30},
+  ];
+  return defs.map(m=>({...m, claimed:claimed.includes(m.id)}));
+}
+
+function claimMission(missionId){
+  const wk = weekKey();
+  const missions = getWeeklyMissions();
+  const m = missions.find(x=>x.id===missionId);
+  if(!m || !m.done || m.claimed) return;
+  state.missionsClaimed[wk] = state.missionsClaimed[wk] || [];
+  state.missionsClaimed[wk].push(missionId);
+  persist();
+  addXp(m.xp);
+  showToast('Missão concluída!', `+${m.xp} XP`, '🎯');
+}
+
+/* ======================================================================
+   INSIGHTS DE PROGRESSO — frases geradas a partir dos dados reais,
+   em vez de só gráficos.
+   ====================================================================== */
+function generateInsights(){
+  const insights = [];
+  const streak = computeStreak(state.completedDates);
+
+  if(streak>=3){
+    insights.push({text:`Você está numa sequência de ${streak} dias treinando.`, tone:'default'});
+  }
+
+  const log = [...(state.weightLog||[])].sort((a,b)=>a.date.localeCompare(b.date));
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-30);
+  const recent = log.filter(l=>new Date(l.date+'T00:00:00')>=cutoff);
+  if(recent.length>=2){
+    const delta = recent[recent.length-1].weight - recent[0].weight;
+    if(Math.abs(delta)>=0.3){
+      const dir = delta<0 ? 'caiu' : 'subiu';
+      insights.push({text:`Seu peso ${dir} ${Math.abs(delta).toFixed(1)}kg no último mês.`, tone:'default'});
+    }
+  }
+
+  let best = null;
+  Object.keys(state.exerciseLoads).forEach(exId=>{
+    const logs = [...state.exerciseLoads[exId]].sort((a,b)=>a.date.localeCompare(b.date));
+    if(logs.length>=2){
+      const first = logs[0].weight, last = logs[logs.length-1].weight;
+      if(first>0){
+        const pct = ((last-first)/first)*100;
+        if(pct>=5 && (!best || pct>best.pct)){
+          const e = findExercise(exId);
+          best = {pct, name: e?e.name:exId};
+        }
+      }
+    }
+  });
+  if(best){
+    insights.push({text:`Você aumentou ${Math.round(best.pct)}% na carga do ${best.name}.`, tone:'success'});
+  }
+
+  const start = startOfWeek(new Date());
+  const lastWeekStart = new Date(start.getTime()-7*86400000);
+  const thisWeekCount = weekProgress().done;
+  const lastWeekCount = Object.keys(state.completedDates).filter(k=>{
+    const d = new Date(k+'T00:00:00');
+    return d>=lastWeekStart && d<start;
+  }).length;
+  if(lastWeekCount>0 && thisWeekCount>lastWeekCount){
+    insights.push({text:`Essa semana você já treinou ${thisWeekCount-lastWeekCount} vez(es) a mais que a semana passada.`, tone:'default'});
+  }
+
+  return insights.slice(0,3);
+}
+
+function lastWeekSummary(){
+  const start = startOfWeek(new Date());
+  const lastStart = new Date(start.getTime()-7*86400000);
+  const sessions = state.history.filter(h=>{
+    const d = new Date(h.date+'T00:00:00');
+    return d>=lastStart && d<start;
+  });
+  const weightLog = [...(state.weightLog||[])].filter(l=>{
+    const d = new Date(l.date+'T00:00:00');
+    return d>=lastStart && d<start;
+  }).sort((a,b)=>a.date.localeCompare(b.date));
+  return {
+    count: sessions.length,
+    volume: sessions.reduce((a,s)=>a+s.volume,0),
+    weightStart: weightLog[0]?.weight,
+    weightEnd: weightLog[weightLog.length-1]?.weight,
+  };
+}
+
+function renderTabConfig(){
+  const c = document.getElementById('profileTabContent');
+  c.innerHTML = `
+    <div class="card" style="margin-bottom:14px;">
+      <div class="theme-toggle" id="cfgThemeToggle" style="cursor:pointer;">
+        <span style="display:inline-flex;align-items:center;gap:8px;">${icon(state.user.theme==='light'?'sun':'moon',{size:16})}${state.user.theme==='light'?'Modo claro':'Modo escuro'}</span><div class="switch"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:14px;">
+      <div class="field"><label>Idioma</label><select disabled><option>Português (Brasil)</option></select></div>
+    </div>
+    <div class="card" style="margin-bottom:14px;">
+      <h4 style="margin-bottom:10px;font-size:13px;">Backup de dados</h4>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="exportBtn">⬇️ Exportar histórico</button>
+        <label class="btn btn-ghost" style="cursor:pointer;">⬆️ Importar histórico<input type="file" id="importInput" accept="application/json" style="display:none;"></label>
+      </div>
+    </div>
+    <div class="card">
+      <h4 style="margin-bottom:10px;font-size:13px;color:var(--red);">Zona de risco</h4>
+      <button class="btn btn-danger btn-block" id="clearDataBtn">Limpar todos os dados</button>
+    </div>
+  `;
+  document.getElementById('cfgThemeToggle').addEventListener('click', ()=>{ toggleTheme(); renderTabConfig(); });
+  document.getElementById('exportBtn').addEventListener('click', ()=>{
+    const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'fittrack_backup.json'; a.click();
+    URL.revokeObjectURL(url);
+    showToast('Exportado', 'Seu backup foi baixado com sucesso.', '⬇️');
+  });
+  document.getElementById('importInput').addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{
+        const imported = JSON.parse(reader.result);
+        state = Object.assign(defaultState(), imported);
+        persist();
+        applyTheme();
+        showToast('Importado', 'Seus dados foram restaurados.', '✅');
+        navigate('dashboard');
+      }catch(err){
+        showToast('Erro', 'Arquivo inválido.', '⚠️');
+      }
+    };
+    reader.readAsText(file);
+  });
+  document.getElementById('clearDataBtn').addEventListener('click', ()=>{
+    if(confirm('Tem certeza? Todos os seus dados serão apagados permanentemente.')){
+      localStorage.removeItem(STORAGE_KEY);
+      state = defaultState();
+      persist();
+      applyTheme();
+      showToast('Dados apagados', 'Começando do zero.', '🗑️');
+      navigate('dashboard');
+    }
+  });
+}
+
+/* ======================================================================
+   NOTIFICAÇÕES (painel)
+   ====================================================================== */
+function openNotifPanel(){
+  state.notifications.forEach(n=>n.read=true);
+  persist();
+  if(state.notifications.length===0){
+    openModal(`<h2 style="margin-bottom:10px;">Notificações</h2><div class="empty-state"><span class="emoji">🔔</span>Nenhuma notificação ainda.</div>`);
+    return;
+  }
+  openModal(`
+    <h2 style="margin-bottom:14px;">Notificações</h2>
+    ${state.notifications.map(n=>`
+      <div class="list-row">
+        <div class="list-row-icon">${n.emoji||'🔔'}</div>
+        <div class="list-row-body">
+          <div class="list-row-title">${n.title}</div>
+          <div class="list-row-sub">${n.message}</div>
+        </div>
+      </div>`).join('')}
+  `);
+}
+
+/* ======================================================================
+   MODAL genérico
+   ====================================================================== */
+function openModal(innerHtml){
+  let overlay = document.getElementById('modalOverlay');
+  if(!overlay){
+    overlay = document.createElement('div');
+    overlay.id = 'modalOverlay';
+    overlay.className = 'overlay';
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
+  }
+  overlay.innerHTML = `<div class="modal"><div class="modal-handle"></div><button class="modal-close" id="modalCloseBtn" aria-label="Fechar">${icon('x',{size:16})}</button><div id="modalBody">${innerHtml}</div></div>`;
+  requestAnimationFrame(()=>overlay.classList.add('open'));
+  document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+  makeInteractiveElementsAccessible(overlay);
+}
+function closeModal(){
+  const overlay = document.getElementById('modalOverlay');
+  if(overlay) overlay.classList.remove('open');
+}
+
+/* ======================================================================
+   Utils
+   ====================================================================== */
+
+document.addEventListener('DOMContentLoaded', boot);
+
