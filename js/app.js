@@ -2109,9 +2109,8 @@ function renderExGrid(){
 }
 
 function openExerciseModal(exId){
-  const e = findExercise(exId);
-  const logs = state.exerciseLoads[exId]||[];
-  const lastLog = logs[logs.length-1];
+  const e = findExercise(exId) || {id:exId, name:'Exercício removido', muscle:'todos', desc:'Este exercício apareceu em treinos antigos, mas não está mais na biblioteca.', execution:'Sem instruções salvas para este exercício.', mistakes:'Sem observações salvas para este exercício.'};
+  const stats = WorkoutProgression.getExerciseStats(state, exId);
   openModal(`
     <div class="exercise-thumb" style="aspect-ratio:16/8;font-size:52px;">${MUSCLE_ICONS[e.muscle]}</div>
     <h2 style="margin:14px 0 4px;">${e.name}</h2>
@@ -2122,91 +2121,150 @@ function openExerciseModal(exId){
     <p style="font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:14px;">${e.execution}</p>
     <h4 style="font-size:13px;margin-bottom:6px;">⚠️ Erros comuns</h4>
     <p style="font-size:13px;color:var(--text-dim);line-height:1.6;">${e.mistakes}</p>
-    ${lastLog?`<hr class="sep"><h4 style="font-size:13px;margin-bottom:6px;">📈 Última carga registrada</h4><p style="font-size:13px;">${lastLog.weight}kg em ${fmtDate(lastLog.date)}</p>`:''}
-    ${logs.length>=2?`<button class="btn btn-primary btn-block" id="viewAnalyticsBtn" style="margin-top:16px;">Ver progresso detalhado</button>`:''}
+    <hr class="sep">
+    <div class="mini-preview-row">
+      <div class="list-row-icon">📈</div>
+      <div>
+        <div class="list-row-title">${stats.sessionsCount ? `${stats.sessionsCount} sessões registradas` : 'Primeira vez'}</div>
+        <div class="list-row-sub">${stats.lastPerformed ? `Último treino em ${fmtDate(stats.lastPerformed)}` : 'Sem histórico para este exercício.'}</div>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" id="viewAnalyticsBtn" style="margin-top:16px;">Ver evolução</button>
   `);
   const analyticsBtn = document.getElementById('viewAnalyticsBtn');
   if(analyticsBtn) analyticsBtn.addEventListener('click', ()=>openExerciseAnalytics(exId));
 }
 
-const TREND_LABEL = {'▲':'Melhorando', '▬':'Estável', '▼':'Diminuindo'};
-const TREND_COLOR = {'▲':'var(--green)', '▬':'var(--text-dim)', '▼':'var(--red)'};
+let exerciseChartMetric = 'weight';
+let exerciseChartRange = 'd90';
+const EXERCISE_CHART_METRICS = [
+  {id:'weight', label:'Carga'},
+  {id:'reps', label:'Repetições'},
+  {id:'volume', label:'Volume'},
+  {id:'oneRm', label:'1RM estimado'},
+];
+const EXERCISE_CHART_RANGES = [
+  {id:'d7', label:'7 dias'},
+  {id:'d30', label:'30 dias'},
+  {id:'d90', label:'90 dias'},
+  {id:'m6', label:'6 meses'},
+  {id:'y1', label:'1 ano'},
+  {id:'all', label:'Tudo'},
+];
 
 /* ======================================================================
    FEATURE 10 — Tela de análise detalhada de um exercício
    ====================================================================== */
 function openExerciseAnalytics(exId){
-  const e = findExercise(exId);
-  const logs = Analytics.exerciseLogs(exId);
-  const trend = Analytics.exerciseTrend(exId);
-  const plateau = Analytics.detectPlateau(exId);
-  const overload = Analytics.overloadSuggestion(exId);
-  const prs = Analytics.detectPRs().filter(p=>p.exerciseId===exId);
-
-  const totalSessions = logs.length;
-  const totalVolume = logs.reduce((a,l)=>a+(l.weight*(l.reps||0)),0);
-  const avgWeight = totalSessions ? Math.round(logs.reduce((a,l)=>a+l.weight,0)/totalSessions*10)/10 : 0;
-  const avgReps = totalSessions ? Math.round(logs.reduce((a,l)=>a+(l.reps||0),0)/totalSessions*10)/10 : 0;
-  const best1RM = Math.max(0, ...logs.map(l=>Analytics.estimated1RM(l.weight,l.reps||1)));
+  const e = findExercise(exId) || {id:exId, name:'Exercício removido', muscle:'todos'};
+  const sessions = WorkoutProgression.getExerciseHistory(state, exId);
+  const stats = WorkoutProgression.getExerciseStats(state, exId);
+  const prs = WorkoutProgression.getExercisePRs(state, exId);
+  const trend = WorkoutProgression.getExerciseTrend(state, exId);
+  const progress = WorkoutProgression.getExerciseProgress(state, exId);
 
   openModal(`
-    <h2 style="margin-bottom:4px;">${e.name}</h2>
-    <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
-
-    <div class="grid grid-3" style="margin:18px 0;">
-      <div class="stat-card"><span class="stat-label">1RM estimado</span><span class="stat-value" style="font-size:18px;">${best1RM}kg</span></div>
-      <div class="stat-card"><span class="stat-label">Sessões</span><span class="stat-value" style="font-size:18px;">${totalSessions}</span></div>
-      <div class="stat-card"><span class="stat-label">Volume total</span><span class="stat-value" style="font-size:18px;">${totalVolume}kg</span></div>
-    </div>
-
-    ${trend.status==='ok' ? `
-      <div class="section-title" style="margin-top:0;">Tendência</div>
-      <div class="card" style="margin-bottom:16px;">
-        ${[['Última sessão',trend.lastVsPrevious],['Últimos 30 dias',trend.last30Days],['Últimos 90 dias',trend.last90Days],['Desde o início',trend.allTime]].map(([label,sym])=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-top:1px solid var(--border);">
-            <span style="font-size:13px;color:var(--text-dim);">${label}</span>
-            <span style="font-weight:700;color:${TREND_COLOR[sym]};">${sym} ${TREND_LABEL[sym]}</span>
-          </div>
-        `).join('')}
-      </div>
-    ` : ''}
-
-    <div class="section-title">Carga ao longo do tempo</div>
-    <div class="card" id="exAnalyticsWeightChart" style="margin-bottom:16px;"></div>
-
-    <div class="section-title">Peso médio · repetições médias</div>
-    <div class="grid grid-2" style="margin-bottom:16px;">
-      <div class="stat-card"><span class="stat-label">Peso médio</span><span class="stat-value" style="font-size:16px;">${avgWeight}kg</span></div>
-      <div class="stat-card"><span class="stat-label">Reps médias</span><span class="stat-value" style="font-size:16px;">${avgReps}</span></div>
-    </div>
-
-    ${plateau ? `
-      <div class="card" style="margin-bottom:16px;">
-        <div class="list-row-title">⚠️ Possível platô</div>
-        <p style="font-size:12.5px;color:var(--text-dim);margin:4px 0 10px;">Sem progresso há ${plateau.sessions} sessões (${plateau.reason}).</p>
-        <div class="chip-row">${plateau.suggestions.map(s=>`<span class="chip">${s}</span>`).join('')}</div>
-      </div>
-    ` : ''}
-    ${overload ? `<div class="card" style="margin-bottom:16px;"><div class="list-row-title">💪 Pronto pra evoluir</div><p style="font-size:12.5px;color:var(--text-dim);margin:4px 0 0;">${overload.message}</p></div>` : ''}
-
-    ${prs.length ? `
-      <div class="section-title">Recordes</div>
-      <div style="margin-bottom:16px;">
-        ${prs.map(pr=>`<div class="card mini-preview-row" style="margin-bottom:8px;"><div class="list-row-icon">🏆</div><div><div style="font-weight:700;font-size:13.5px;">${pr.label.split('·')[0].trim()}</div><div style="color:var(--text-dim);font-size:12px;">${pr.value}${pr.date?' · '+fmtDate(pr.date):''}</div></div></div>`).join('')}
-      </div>
-    ` : ''}
-
-    <div class="section-title">Últimas sessões</div>
-    <div>
-      ${[...logs].reverse().slice(0,6).map(l=>`
-        <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-top:1px solid var(--border);">
-          <span style="color:var(--text-dim);">${fmtDate(l.date)}</span>
-          <span style="font-weight:700;">${l.weight}kg × ${l.reps||0}</span>
+    <div class="exercise-history">
+      <div class="exercise-history-header">
+        <div class="exercise-history-icon">${MUSCLE_ICONS[e.muscle]||'🏋️'}</div>
+        <div>
+          <h2>${e.name}</h2>
+          <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]||e.muscle||'Exercício'}</span>
         </div>
-      `).join('')}
+      </div>
+
+      <div class="exercise-history-stats">
+        <div><span>Sessões</span><b>${stats.sessionsCount}</b></div>
+        <div><span>Último treino</span><b>${stats.lastPerformed ? fmtDate(stats.lastPerformed) : 'Primeira vez'}</b></div>
+        <div><span>Melhor carga</span><b>${stats.bestWeight ? `${WorkoutProgression.formatNumber(stats.bestWeight)} kg` : '—'}</b></div>
+        <div><span>Mais reps</span><b>${stats.bestReps || '—'}</b></div>
+        <div><span>Melhor 1RM</span><b>${stats.bestOneRm ? `${WorkoutProgression.formatNumber(stats.bestOneRm)} kg` : '—'}</b></div>
+        <div><span>Volume total</span><b>${WorkoutProgression.formatNumber(stats.totalVolume)} kg</b></div>
+      </div>
+
+      <div class="section-title">Performance atual</div>
+      ${stats.lastPerformance ? `
+        <div class="card exercise-current">
+          <span>Último treino · ${fmtDate(stats.lastPerformance.date)}</span>
+          ${stats.lastPerformance.sets.map(set=>`<b>${WorkoutProgression.formatNumber(set.weight)} kg × ${set.reps}</b>`).join('')}
+        </div>
+      ` : `<div class="empty-state compact"><span class="emoji">📈</span>Primeira vez</div>`}
+
+      <div class="section-title">Recordes</div>
+      <div class="exercise-pr-grid">
+        ${prs.map(pr=>`
+          <div class="exercise-pr-card">
+            <span>${pr.label}</span>
+            <b>${pr.value}</b>
+            <small>${pr.date ? fmtDate(pr.date) : ''}</small>
+          </div>
+        `).join('') || `<div class="empty-state compact">Sem recordes ainda.</div>`}
+      </div>
+
+      <div class="section-title">Tendência</div>
+      <div class="exercise-trend ${trend.status}">
+        <b>${trend.label}</b>
+        <span>${trend.status==='insufficient' ? 'Registre mais sessões para comparar com segurança.' : `Comparando a média das 2 sessões mais recentes com as 2 anteriores: ${trend.deltaPct>=0?'+':''}${trend.deltaPct.toFixed(1)}%.`}</span>
+      </div>
+
+      ${progress ? `
+        <div class="exercise-comparison-list">
+          ${progress.map(item=>`
+            <div>
+              <span>${item.label}</span>
+              <b>${item.text}</b>
+              <strong>${item.pct>=0?'+':''}${item.pct.toFixed(1)}%</strong>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      <div class="section-title">Gráfico</div>
+      <div class="exercise-chart-controls">
+        <div class="chip-row">
+          ${EXERCISE_CHART_METRICS.map(m=>`<button class="chip ${exerciseChartMetric===m.id?'active':''}" data-exchartmetric="${m.id}" aria-label="Mostrar ${m.label}">${m.label}</button>`).join('')}
+        </div>
+        <div class="chip-row">
+          ${EXERCISE_CHART_RANGES.map(r=>`<button class="chip ${exerciseChartRange===r.id?'active':''}" data-exchartrange="${r.id}" aria-label="Período ${r.label}">${r.label}</button>`).join('')}
+        </div>
+      </div>
+      <div class="card exercise-chart-card" id="exerciseProgressChart" role="img" aria-label="Gráfico de progresso do exercício"></div>
+
+      <div class="section-title">Sessões</div>
+      <div class="exercise-session-list">
+        ${[...sessions].reverse().map((session,index)=>`
+          <details class="exercise-session" ${index===0?'open':''}>
+            <summary>
+              <span>${fmtDate(session.date)}</span>
+              <b>Volume: ${WorkoutProgression.formatNumber(session.volume)} kg</b>
+            </summary>
+            <div class="exercise-session-sets">
+              ${session.sets.map(set=>`<span>${WorkoutProgression.formatNumber(set.weight)} kg × ${set.reps}</span>`).join('')}
+              ${session.legacy?`<small>Registro antigo importado de cargas salvas.</small>`:''}
+            </div>
+          </details>
+        `).join('') || `<div class="empty-state compact">Nenhuma sessão registrada.</div>`}
+      </div>
     </div>
   `);
-  renderLineChart(document.getElementById('exAnalyticsWeightChart'), logs.map(l=>({label:fmtDate(l.date).slice(0,5), value:l.weight})));
+  renderExerciseProgressChart(exId);
+  document.querySelectorAll('[data-exchartmetric]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ exerciseChartMetric = btn.dataset.exchartmetric; openExerciseAnalytics(exId); });
+  });
+  document.querySelectorAll('[data-exchartrange]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ exerciseChartRange = btn.dataset.exchartrange; openExerciseAnalytics(exId); });
+  });
+}
+
+function renderExerciseProgressChart(exId){
+  const chart = document.getElementById('exerciseProgressChart');
+  if(!chart) return;
+  const points = WorkoutProgression.getExerciseChartPoints(state, exId, exerciseChartMetric, exerciseChartRange);
+  if(points.length<2){
+    chart.innerHTML = `<div class="empty-state compact"><span class="emoji">📈</span>Dados insuficientes para este gráfico.</div>`;
+    return;
+  }
+  renderLineChart(chart, points, {height:180});
 }
 
 /* ======================================================================
@@ -3328,4 +3386,3 @@ function closeModal(){
    ====================================================================== */
 
 document.addEventListener('DOMContentLoaded', boot);
-
