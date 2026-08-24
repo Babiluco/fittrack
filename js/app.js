@@ -405,10 +405,12 @@ function checkForRecoverableSession(){
 }
 
 function resumeActiveSession(s){
+  const tpl = getTemplate(s.templateId);
   runnerCtx = {
     id: s.id, templateId: s.templateId, dateKey: s.dateKey, mood: s.mood,
     exIndex: s.exIndex, startTime: s.startedAt,
     lastCompleted: s.lastCompleted, restState: s.restState,
+    exercises: Array.isArray(s.exercises) ? s.exercises : (tpl?.exercises||[]).map(ex=>Object.assign({}, ex)),
     sets: s.sets,
   };
   let el = document.getElementById('runnerRoot');
@@ -444,7 +446,7 @@ function resumeActiveSession(s){
    conteúdo recém-renderizado, dá tabindex+role="button" pra esses
    elementos, e o listener global abaixo faz Enter/Espaço funcionar como
    clique — chamado uma vez, cobre o app inteiro. */
-const CLICKABLE_DIV_SELECTOR = '[data-nav],[data-day],[data-daydetail],[data-addex],[data-mood],[data-tpl],[data-goal],[data-session],[data-toggle],[data-freeworkout],.theme-toggle,.card.interactive';
+const CLICKABLE_DIV_SELECTOR = '[data-nav],[data-day],[data-daydetail],[data-addex],[data-mood],[data-tpl],[data-goal],[data-session],[data-toggle],[data-freeworkout],[data-replace-exercise],.theme-toggle,.card.interactive';
 
 function makeInteractiveElementsAccessible(root){
   (root||document).querySelectorAll(CLICKABLE_DIV_SELECTOR).forEach(el=>{
@@ -1720,6 +1722,7 @@ function startCheckinFlow(templateId, dateKey){
 function openRunner(templateId, dateKey, mood){
   const tpl = getTemplate(templateId);
   const loadMultiplier = (mood==='tired')?0.9:(mood==='exhausted')?0.8:1;
+  const exercises = tpl.exercises.map(ex=>Object.assign({}, ex));
   runnerCtx = {
     id: cryptoId(),
     templateId, dateKey, mood,
@@ -1727,7 +1730,8 @@ function openRunner(templateId, dateKey, mood){
     startTime:Date.now(),
     lastCompleted:null, // {exIndex,setIndex} — pra permitir desfazer a última série marcada
     restState:null,      // {endsAt(timestamp), totalSeconds, paused, pausedRemaining} — null quando não tá descansando
-    sets: tpl.exercises.map(ex=>{
+    exercises,
+    sets: exercises.map(ex=>{
       const n = ex.sets||1;
       // Defaults vêm da última performance real do histórico concluído.
       // exerciseLoads segue como fallback de compatibilidade para dados antigos.
@@ -1772,6 +1776,7 @@ function persistRunnerSession(){
     status: 'active',
     startedAt: runnerCtx.startTime,
     exIndex: runnerCtx.exIndex,
+    exercises: runnerCtx.exercises,
     sets: runnerCtx.sets,
     lastCompleted: runnerCtx.lastCompleted,
     restState: runnerCtx.restState,
@@ -1851,6 +1856,18 @@ function renderPreviousPerformance(previous){
   `;
 }
 
+function runnerExercises(){
+  if(!runnerCtx) return [];
+  if(Array.isArray(runnerCtx.exercises) && runnerCtx.exercises.length) return runnerCtx.exercises;
+  const tpl = getTemplate(runnerCtx.templateId);
+  runnerCtx.exercises = (tpl?.exercises||[]).map(ex=>Object.assign({}, ex));
+  return runnerCtx.exercises;
+}
+
+function currentRunnerExerciseDef(){
+  return runnerExercises()[runnerCtx.exIndex];
+}
+
 function firstOpenSetIndex(setsArr){
   const index = setsArr.findIndex(s=>!s.done && !s.skipped);
   return index>=0 ? index : -1;
@@ -1880,8 +1897,7 @@ function setRunnerSetValue(setIndex, field, value){
 
 function completeRunnerSet(setIndex, options){
   if(!runnerCtx) return;
-  const tpl = getTemplate(runnerCtx.templateId);
-  const exDef = tpl.exercises[runnerCtx.exIndex];
+  const exDef = currentRunnerExerciseDef();
   const exercise = findExercise(exDef.exerciseId);
   const setsArr = runnerCtx.sets[runnerCtx.exIndex];
   const set = setsArr[setIndex];
@@ -1906,13 +1922,14 @@ function renderRunnerExercise(){
   const runnerEl = document.getElementById('runnerEl');
   if(!runnerEl || !runnerCtx) return;
   const tpl = getTemplate(runnerCtx.templateId);
-  const exDef = tpl.exercises[runnerCtx.exIndex];
+  const exercises = runnerExercises();
+  const exDef = exercises[runnerCtx.exIndex];
   const e = findExercise(exDef.exerciseId);
   const setsArr = runnerCtx.sets[runnerCtx.exIndex];
   const allDone = setsArr.every(s=>s.done || s.skipped);
-  const isLast = runnerCtx.exIndex === tpl.exercises.length-1;
+  const isLast = runnerCtx.exIndex === exercises.length-1;
   const doneCount = setsArr.filter(s=>s.done).length;
-  const progressPct = ((runnerCtx.exIndex + (setsArr.length?doneCount/setsArr.length:0)) / tpl.exercises.length) * 100;
+  const progressPct = ((runnerCtx.exIndex + (setsArr.length?doneCount/setsArr.length:0)) / exercises.length) * 100;
   const previous = WorkoutProgression.previousPerformance(state.history, exDef.exerciseId, runnerCtx.dateKey);
   const activeSetIndex = firstOpenSetIndex(setsArr);
   const activeSet = activeSetIndex>=0 ? setsArr[activeSetIndex] : null;
@@ -1931,7 +1948,7 @@ function renderRunnerExercise(){
     <div class="runner-header">
       <button class="icon-btn" id="runnerClose" aria-label="Fechar treino">${icon('x')}</button>
       <div class="runner-header-mid">
-        <div class="runner-counter">${runnerCtx.exIndex+1} / ${tpl.exercises.length}</div>
+        <div class="runner-counter">${runnerCtx.exIndex+1} / ${exercises.length}</div>
         <div class="runner-clock"><span id="runnerElapsed">0:00</span> · <span id="runnerRemaining">~${tpl.estimatedTime||30} min restantes</span></div>
       </div>
       <button class="icon-btn" id="runnerRestBtn" aria-label="Cronômetro de descanso">${icon('clock')}</button>
@@ -2000,6 +2017,7 @@ function renderRunnerExercise(){
       </div>
       ${progression ? `<div class="progression-suggestion"><b>${progression.message}</b><span>${progression.next}</span></div>` : ''}
       <button class="btn btn-ghost btn-sm" id="showInfoBtn" style="margin-top:16px;">ℹ️ Ver execução correta</button>
+      <button class="btn btn-ghost btn-sm" id="replaceExerciseBtn" style="margin-top:10px;">Substituir exercício</button>
     </div>
     <div class="runner-footer">
       ${isLast && allDone
@@ -2017,6 +2035,7 @@ function renderRunnerExercise(){
   });
   document.getElementById('runnerRestBtn').addEventListener('click', ()=>openRestTimerPicker(exDef.rest||60));
   document.getElementById('showInfoBtn').addEventListener('click', ()=>openExerciseModal(e.id));
+  document.getElementById('replaceExerciseBtn').addEventListener('click', openExerciseReplacementModal);
 
   runnerEl.querySelectorAll('[data-adjust-field]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -2099,6 +2118,103 @@ function renderRunnerExercise(){
   updateRunnerClock();
 }
 
+function replacementCandidates(query){
+  if(!runnerCtx) return [];
+  const exDef = currentRunnerExerciseDef();
+  const current = findExercise(exDef.exerciseId);
+  const q = String(query||'').trim().toLowerCase();
+  return allExercises()
+    .filter(ex=>ex.id!==exDef.exerciseId)
+    .filter(ex=>!q || ex.name.toLowerCase().includes(q) || (MUSCLE_LABELS[ex.muscle]||ex.muscle).toLowerCase().includes(q))
+    .sort((a,b)=>{
+      const aSame = current && a.muscle===current.muscle ? 0 : 1;
+      const bSame = current && b.muscle===current.muscle ? 0 : 1;
+      if(aSame!==bSame) return aSame-bSame;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, 18);
+}
+
+function openExerciseReplacementModal(){
+  if(!runnerCtx) return;
+  const setsArr = runnerCtx.sets[runnerCtx.exIndex]||[];
+  if(setsArr.some(set=>set.done)){
+    showToast('Séries já registradas', 'Substitua antes de concluir séries para manter o histórico correto.', '⚠️');
+    return;
+  }
+  const exDef = currentRunnerExerciseDef();
+  const current = findExercise(exDef.exerciseId);
+  openModal(`
+    <h2 style="margin-bottom:6px;">Substituir exercício</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:14px;">${current ? current.name : 'Exercício atual'}</p>
+    <div class="field" style="margin-bottom:12px;"><input type="text" id="replacementSearch" placeholder="Buscar exercício..."></div>
+    <div id="replacementList"></div>
+  `);
+  const input = document.getElementById('replacementSearch');
+  function render(query){
+    const list = document.getElementById('replacementList');
+    const candidates = replacementCandidates(query);
+    if(!candidates.length){
+      list.innerHTML = `<div class="empty-state compact"><span class="emoji">🔎</span>Nenhum exercício encontrado.</div>`;
+      return;
+    }
+    list.innerHTML = candidates.map(ex=>`
+      <div class="list-row" data-replace-exercise="${ex.id}" style="cursor:pointer;">
+        <div class="list-row-icon">${MUSCLE_ICONS[ex.muscle]||'🏋️'}</div>
+        <div class="list-row-body">
+          <div class="list-row-title">${ex.name}</div>
+          <div class="list-row-sub">${MUSCLE_LABELS[ex.muscle]||capitalize(ex.muscle)} · ${ex.desc.slice(0,64)}${ex.desc.length>64?'…':''}</div>
+        </div>
+        <div class="list-row-trail">${icon('chevron-right',{size:16})}</div>
+      </div>
+    `).join('');
+    list.querySelectorAll('[data-replace-exercise]').forEach(row=>{
+      row.addEventListener('click', ()=>{
+        replaceRunnerExercise(row.dataset.replaceExercise);
+      });
+    });
+  }
+  input.addEventListener('input', ()=>render(input.value));
+  render('');
+  input.focus();
+}
+
+function replaceRunnerExercise(exerciseId){
+  if(!runnerCtx) return;
+  const replacement = findExercise(exerciseId);
+  if(!replacement) return;
+  const exercises = runnerExercises();
+  const currentDef = exercises[runnerCtx.exIndex];
+  const currentExercise = findExercise(currentDef.exerciseId);
+  const setsArr = runnerCtx.sets[runnerCtx.exIndex]||[];
+  if(setsArr.some(set=>set.done)){
+    showToast('Séries já registradas', 'Substitua antes de concluir séries para manter o histórico correto.', '⚠️');
+    return;
+  }
+  const previous = WorkoutProgression.mostRecentValidSet(state.history, exerciseId, runnerCtx.dateKey);
+  const legacyLoads = state.exerciseLoads[exerciseId]||[];
+  const legacyLoad = legacyLoads.length ? legacyLoads[legacyLoads.length-1].weight : null;
+  const nextLoad = previous ? previous.weight : (legacyLoad ?? currentDef.load ?? 0);
+  const nextReps = previous ? previous.reps : (currentDef.reps || setsArr[0]?.reps || 0);
+  exercises[runnerCtx.exIndex] = Object.assign({}, currentDef, {
+    exerciseId,
+    load: nextLoad,
+    reps: nextReps,
+  });
+  runnerCtx.sets[runnerCtx.exIndex] = setsArr.map(set=>Object.assign({}, set, {
+    weight: nextLoad ? Math.round(Number(nextLoad)*10)/10 : 0,
+    reps: nextReps,
+    done:false,
+    skipped:false,
+  }));
+  runnerCtx.lastCompleted = null;
+  closeRestOverlay();
+  persistRunnerSession();
+  closeModal();
+  showToast('Exercício substituído', `${currentExercise ? currentExercise.name : 'Exercício'} trocado por ${replacement.name}.`, '🔁');
+  renderRunnerExercise();
+}
+
 /* Peso/reps mudam a cada tecla digitada — salvar a cada toque seria
    excessivo, então essas escritas usam um pequeno atraso (debounce).
    Ações críticas (marcar/pular série) NUNCA passam por aqui — são
@@ -2110,8 +2226,8 @@ function debouncedPersistRunnerSession(){
 }
 
 function goToNextExercise(){
-  const tpl = getTemplate(runnerCtx.templateId);
-  if(runnerCtx.exIndex < tpl.exercises.length-1){
+  const exercises = runnerExercises();
+  if(runnerCtx.exIndex < exercises.length-1){
     runnerCtx.exIndex++;
     persistRunnerSession();
     renderRunnerExercise();
@@ -2124,17 +2240,17 @@ function goToNextExercise(){
 
 function getRestNextLabel(){
   if(!runnerCtx) return {kind:'none', text:''};
-  const tpl = getTemplate(runnerCtx.templateId);
-  const exDef = tpl.exercises[runnerCtx.exIndex];
+  const exercises = runnerExercises();
+  const exDef = exercises[runnerCtx.exIndex];
   const setsArr = runnerCtx.sets[runnerCtx.exIndex];
   const allDone = setsArr.every(s=>s.done);
   if(!allDone){
     const e = findExercise(exDef.exerciseId);
     return {kind:'set', text:`Próxima série · ${e?e.name:''}`};
   }
-  const isLast = runnerCtx.exIndex === tpl.exercises.length-1;
+  const isLast = runnerCtx.exIndex === exercises.length-1;
   if(isLast) return {kind:'finish', text:'Última série concluída — hora de finalizar! 🎉'};
-  const nextDef = tpl.exercises[runnerCtx.exIndex+1];
+  const nextDef = exercises[runnerCtx.exIndex+1];
   const nextE = findExercise(nextDef.exerciseId);
   return {kind:'exercise', text:`Próximo exercício · ${nextE?nextE.name:''}`};
 }
@@ -2344,9 +2460,10 @@ function removeTimerFab(){
 function finishWorkout(){
   stopRunnerClock();
   const tpl = getTemplate(runnerCtx.templateId);
+  const exercises = runnerExercises();
   const durationMin = Math.max(1, Math.round((Date.now()-runnerCtx.startTime)/60000));
   let volume = 0, setsCompleted = 0;
-  const exercisesLog = tpl.exercises.map((exDef,i)=>{
+  const exercisesLog = exercises.map((exDef,i)=>{
     const sets = runnerCtx.sets[i].map(s=>({weight:s.weight, reps:s.reps, notes:s.notes, done:s.done, skipped:s.skipped}));
     sets.forEach(s=>{ if(s.done){ volume += (s.weight*s.reps); setsCompleted++; } });
     return {exerciseId:exDef.exerciseId, sets};
@@ -2424,7 +2541,7 @@ function finishWorkout(){
   if(newRecord) pushNotification('Novo recorde! 🎉', 'Você superou sua carga anterior em um exercício.', '🏆');
   if(isNewStreakRecord) pushNotification('Novo recorde de sequência!', `${state.streak} dias treinando seguidos.`, '🔥');
 
-  showCompletionScreen(session, {xp:50, newRecord, isNewStreakRecord, setsCompleted, exercisesCompleted, totalExercises:tpl.exercises.length});
+  showCompletionScreen(session, {xp:50, newRecord, isNewStreakRecord, setsCompleted, exercisesCompleted, totalExercises:exercises.length});
 }
 
 const FINISH_MOTIVATION = [
