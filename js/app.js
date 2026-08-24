@@ -92,6 +92,25 @@ function toggleFavoriteWorkout(templateId){
   persist();
 }
 
+function ensureOnboarding(){
+  state.onboarding = state.onboarding && typeof state.onboarding === 'object'
+    ? state.onboarding
+    : {completed:false, completedAt:null};
+  return state.onboarding;
+}
+
+function shouldShowOnboarding(){
+  const onboarding = ensureOnboarding();
+  return !onboarding.completed;
+}
+
+function completeOnboarding(){
+  const onboarding = ensureOnboarding();
+  onboarding.completed = true;
+  onboarding.completedAt = new Date().toISOString();
+  persist();
+}
+
 /* Todos os treinos disponíveis: fixos (data.js) + criados pelo usuário.
    includeRest=true também inclui a opção "Descanso" (usada no cronograma). */
 function allTemplateIds(includeRest){
@@ -138,6 +157,7 @@ async function boot(){
 function renderAuthenticatedApp(){
   renderShell();
   navigate('dashboard');
+  navigate(shouldShowOnboarding() ? 'onboarding' : 'dashboard');
   maybeGenerateNotifications();
   checkForRecoverableSession();
   authAppRendered = true;
@@ -583,6 +603,7 @@ function navigate(view, subTab){
   void wrap.offsetWidth;
   wrap.classList.add('view-enter');
   const renderers = {
+    onboarding: renderOnboarding,
     dashboard: renderDashboard,
     treino: renderTreino,
     progresso: renderProgresso,
@@ -720,6 +741,223 @@ function bmi(){
   return (state.user.weight/(h*h)).toFixed(1);
 }
 
+/* ======================================================================
+   VIEW: ONBOARDING
+   ====================================================================== */
+const ONBOARDING_GOALS = [
+  {id:'hipertrofia', label:'Hipertrofia', detail:'Ganhar massa e evoluir cargas'},
+  {id:'emagrecimento', label:'Emagrecimento', detail:'Manter constância e gasto semanal'},
+  {id:'forca', label:'Força', detail:'Priorizar progressão e técnica'},
+  {id:'condicionamento', label:'Condicionamento', detail:'Treinar melhor, respirar melhor'},
+];
+
+const ONBOARDING_LEVELS = [
+  {id:'iniciante', label:'Iniciante'},
+  {id:'intermediario', label:'Intermediária'},
+  {id:'avancado', label:'Avançada'},
+];
+
+const ONBOARDING_DAYS = [2,3,4,5,6];
+const ONBOARDING_TIMES = [30,45,60,75];
+
+const ONBOARDING_FOCUS = [
+  {id:'gluteos', label:'Glúteos'},
+  {id:'pernas', label:'Pernas'},
+  {id:'costas', label:'Costas'},
+  {id:'peito', label:'Peito'},
+  {id:'ombros', label:'Ombros'},
+  {id:'abdomen', label:'Abdômen'},
+  {id:'cardio', label:'Cardio'},
+];
+
+const ONBOARDING_LIMITATIONS = [
+  {id:'joelho', label:'Joelho'},
+  {id:'lombar', label:'Lombar'},
+  {id:'ombro', label:'Ombro'},
+  {id:'tempo', label:'Pouco tempo'},
+  {id:'equipamento', label:'Pouco equipamento'},
+];
+
+function recommendedWeekPlan(days, goal){
+  const plan = {
+    0:'descanso',
+    1:'descanso',
+    2:'descanso',
+    3:'descanso',
+    4:'descanso',
+    5:'descanso',
+    6:'descanso',
+  };
+  const base = goal==='condicionamento'
+    ? ['full_body_condicionamento','gluteo_posterior','peito_ombro_triceps','quadriceps_panturrilha','costas_biceps_abdomen','full_body_condicionamento']
+    : ['gluteo_posterior','costas_biceps_abdomen','quadriceps_panturrilha','peito_ombro_triceps','gluteo_enfase','full_body_condicionamento'];
+  const daySlots = {
+    2:[1,4],
+    3:[1,3,5],
+    4:[1,2,4,5],
+    5:[1,2,3,4,5],
+    6:[1,2,3,4,5,6],
+  }[Math.max(2, Math.min(6, Number(days)||3))];
+  daySlots.forEach((day, index)=>{ plan[day] = base[index] || 'full_body_condicionamento'; });
+  return plan;
+}
+
+function onboardingChoiceButtons(name, options, selected, extra){
+  return options.map(option=>{
+    const value = String(option.id ?? option);
+    const label = option.label ?? option;
+    const detail = option.detail ? `<span>${option.detail}</span>` : '';
+    return `
+      <button class="onboarding-choice ${String(selected)===value?'active':''}" type="button" data-onboarding-choice="${name}" data-value="${value}">
+        <strong>${label}</strong>
+        ${detail}
+      </button>
+    `;
+  }).join('') + (extra || '');
+}
+
+function onboardingMultiButtons(name, options, selected){
+  const selectedSet = new Set(selected || []);
+  return options.map(option=>`
+    <button class="chip ${selectedSet.has(option.id)?'active':''}" type="button" data-onboarding-multi="${name}" data-value="${option.id}">
+      ${option.label}
+    </button>
+  `).join('');
+}
+
+function getOnboardingSingle(name){
+  return document.querySelector(`[data-onboarding-choice="${name}"].active`)?.dataset.value || '';
+}
+
+function getOnboardingMulti(name){
+  return [...document.querySelectorAll(`[data-onboarding-multi="${name}"].active`)].map(btn=>btn.dataset.value);
+}
+
+function setOnboardingChoice(button){
+  document.querySelectorAll(`[data-onboarding-choice="${button.dataset.onboardingChoice}"]`).forEach(el=>el.classList.remove('active'));
+  button.classList.add('active');
+}
+
+function toggleOnboardingMulti(button){
+  button.classList.toggle('active');
+}
+
+function renderOnboarding(){
+  const wrap = document.getElementById('viewWrap');
+  const u = state.user;
+  const selectedGoal = u.goal || 'hipertrofia';
+  const selectedDays = Number(u.availableDays || 3);
+  const selectedTime = Number(u.avgWorkoutTime || 45);
+  const selectedLevel = u.level || 'iniciante';
+  const selectedFocus = Array.isArray(u.focusAreas) ? u.focusAreas : [];
+  const selectedLimitations = Array.isArray(u.limitations) ? u.limitations : [];
+
+  wrap.innerHTML = `
+    <div class="view-header onboarding-header">
+      <div class="greeting">
+        <h1>Vamos ajustar seu FitTrack</h1>
+        <p>Seu treino fica mais livre quando o app entende sua rotina.</p>
+      </div>
+    </div>
+
+    <div class="onboarding-grid">
+      <section class="card onboarding-card">
+        <div class="section-title">Perfil</div>
+        <div class="field"><label>Nome</label><input type="text" id="onboardingName" value="${escapeHtml(u.name||'')}" placeholder="Seu nome"></div>
+        <div class="field-row">
+          <div class="field"><label>Altura (cm)</label><input type="number" id="onboardingHeight" value="${u.height||''}"></div>
+          <div class="field"><label>Peso (kg)</label><input type="number" step="0.1" id="onboardingWeight" value="${u.weight||''}"></div>
+        </div>
+      </section>
+
+      <section class="card onboarding-card">
+        <div class="section-title">Objetivo principal</div>
+        <div class="onboarding-choice-grid">
+          ${onboardingChoiceButtons('goal', ONBOARDING_GOALS, selectedGoal)}
+        </div>
+      </section>
+
+      <section class="card onboarding-card">
+        <div class="section-title">Rotina</div>
+        <label class="onboarding-label">Dias por semana</label>
+        <div class="onboarding-inline">
+          ${onboardingChoiceButtons('days', ONBOARDING_DAYS.map(d=>({id:d,label:`${d} dias`})), selectedDays)}
+        </div>
+        <label class="onboarding-label">Tempo médio</label>
+        <div class="onboarding-inline">
+          ${onboardingChoiceButtons('time', ONBOARDING_TIMES.map(t=>({id:t,label:`${t} min`})), selectedTime)}
+        </div>
+      </section>
+
+      <section class="card onboarding-card">
+        <div class="section-title">Nível e foco</div>
+        <label class="onboarding-label">Experiência</label>
+        <div class="onboarding-inline">
+          ${onboardingChoiceButtons('level', ONBOARDING_LEVELS, selectedLevel)}
+        </div>
+        <label class="onboarding-label">Áreas que você quer priorizar</label>
+        <div class="chip-row">
+          ${onboardingMultiButtons('focus', ONBOARDING_FOCUS, selectedFocus)}
+        </div>
+      </section>
+
+      <section class="card onboarding-card">
+        <div class="section-title">Atenções</div>
+        <div class="chip-row">
+          ${onboardingMultiButtons('limitations', ONBOARDING_LIMITATIONS, selectedLimitations)}
+        </div>
+      </section>
+    </div>
+
+    <div class="onboarding-actions">
+      <button class="btn btn-primary" id="finishOnboardingBtn">Salvar e começar</button>
+      <button class="btn btn-ghost" id="skipOnboardingBtn">Agora não</button>
+    </div>
+  `;
+
+  wrap.querySelectorAll('[data-onboarding-choice]').forEach(btn=>{
+    btn.addEventListener('click', ()=>setOnboardingChoice(btn));
+  });
+  wrap.querySelectorAll('[data-onboarding-multi]').forEach(btn=>{
+    btn.addEventListener('click', ()=>toggleOnboardingMulti(btn));
+  });
+  document.getElementById('skipOnboardingBtn').addEventListener('click', ()=>{
+    completeOnboarding();
+    navigate('dashboard');
+  });
+  document.getElementById('finishOnboardingBtn').addEventListener('click', saveOnboarding);
+}
+
+async function saveOnboarding(){
+  const button = document.getElementById('finishOnboardingBtn');
+  button.disabled = true;
+  button.textContent = 'Salvando...';
+
+  const weight = Number(document.getElementById('onboardingWeight').value) || state.user.weight;
+  if(weight && weight !== state.user.weight){
+    state.weightLog.push({date:todayKey(), weight});
+  }
+
+  state.user.name = document.getElementById('onboardingName').value.trim() || state.user.name || 'Usuária FitTrack';
+  state.user.height = Number(document.getElementById('onboardingHeight').value) || state.user.height;
+  state.user.weight = weight;
+  state.user.goal = getOnboardingSingle('goal') || state.user.goal || 'hipertrofia';
+  state.user.availableDays = Number(getOnboardingSingle('days')) || state.user.availableDays || 3;
+  state.user.avgWorkoutTime = Number(getOnboardingSingle('time')) || state.user.avgWorkoutTime || 45;
+  state.user.level = getOnboardingSingle('level') || state.user.level || 'iniciante';
+  state.user.focusAreas = getOnboardingMulti('focus');
+  state.user.limitations = getOnboardingMulti('limitations');
+  state.weekPlan = recommendedWeekPlan(state.user.availableDays, state.user.goal);
+  completeOnboarding();
+
+  const remote = await saveSupabaseProfile({silent:true});
+  if(remote.ok){
+    showToast('FitTrack ajustado', 'Seu perfil foi salvo neste aparelho e no Supabase.', '✅');
+  } else {
+    showToast('FitTrack ajustado', 'Seu perfil foi salvo neste aparelho.', '✅');
+  }
+  navigate('dashboard');
+}
 
 /* ======================================================================
    VIEW: DASHBOARD
@@ -4026,6 +4264,10 @@ function renderTabConfig(){
       </div>
     </div>
     <div class="card" style="margin-bottom:14px;">
+      <h4 style="margin-bottom:10px;font-size:13px;">Ajuste inicial</h4>
+      <button class="btn btn-ghost btn-block" id="openOnboardingBtn">Refazer ajuste do FitTrack</button>
+    </div>
+    <div class="card" style="margin-bottom:14px;">
       <div class="field"><label>Idioma</label><select disabled><option>Português (Brasil)</option></select></div>
     </div>
     <div class="card" style="margin-bottom:14px;">
@@ -4045,6 +4287,7 @@ function renderTabConfig(){
     if(!result.ok) showToast('Não foi possível sair', result.message || 'Tente novamente.', '⚠️');
   });
   document.getElementById('cfgThemeToggle').addEventListener('click', ()=>{ toggleTheme(); renderTabConfig(); });
+  document.getElementById('openOnboardingBtn').addEventListener('click', ()=>navigate('onboarding'));
   document.getElementById('exportBtn').addEventListener('click', ()=>{
     const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
