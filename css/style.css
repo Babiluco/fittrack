@@ -573,6 +573,23 @@ main.view-wrap{
 .exercise-photo{width:100%;height:100%;object-fit:contain;display:block;background:#fff;}
 .visual-icon .exercise-photo{border-radius:10px;object-fit:cover;}
 .runner-exercise-media .exercise-photo{border-radius:var(--radius-lg);object-fit:contain;padding:8px;}
+.exercise-emoji{
+  width:100%;
+  height:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:clamp(34px, 7vw, 72px);
+  line-height:1;
+}
+
+.visual-icon .exercise-emoji{
+  font-size:28px;
+}
+
+.runner-exercise-media .exercise-emoji{
+  font-size:76px;
+}
 .exercise-name{font-weight:700;font-size:14px;}
 .exercise-meta{font-size:11.5px;color:var(--text-dim);margin-top:3px;}
 .muscle-tag{
@@ -607,24 +624,6 @@ main.view-wrap{
 .muscle-cardio{color:#ef4444;}
 .muscle-peito,.muscle-costas,.muscle-pernas,.muscle-gluteos,.muscle-ombros,.muscle-biceps,.muscle-triceps,.muscle-abdomen,.muscle-cardio{color:#d65a4a;}
 body.light .mv-body{fill:#f7f7fc;stroke:#c8c8d4;}
-
-.exercise-visual{
-  width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#c94a3f;
-}
-.exercise-visual svg{width:100%;height:100%;max-width:152px;display:block;}
-.exercise-visual-icon svg{max-width:46px;}
-.exercise-visual-card svg{max-width:150px;}
-.exercise-visual-large svg{max-width:260px;}
-.exercise-visual-hero svg{max-width:300px;}
-.ev-body{fill:none;stroke:#d8d8dd;stroke-width:7;stroke-linecap:round;stroke-linejoin:round;}
-.ev-body-fill{fill:#d8d8dd;stroke:#9b9ba6;stroke-width:2;}
-.ev-hot{fill:currentColor;opacity:.88;stroke:rgba(90,20,16,.28);stroke-width:1.5;stroke-linejoin:round;}
-.ev-equip{fill:none;stroke:#8f8f98;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;opacity:.7;}
-.ev-equip-fill{fill:#3a3a42;stroke:#8f8f98;stroke-width:2;}
-.ev-line{fill:none;stroke:#2f2f35;stroke-width:2.5;stroke-linecap:round;opacity:.75;}
-body.light .ev-body{stroke:#5d5d66;}
-body.light .ev-body-fill{fill:#5d5d66;stroke:#303038;}
-body.light .ev-equip{stroke:#9a9aa4;}
 
 /* Modal / overlay */
 .overlay{
