@@ -444,7 +444,7 @@ function resumeActiveSession(s){
    conteúdo recém-renderizado, dá tabindex+role="button" pra esses
    elementos, e o listener global abaixo faz Enter/Espaço funcionar como
    clique — chamado uma vez, cobre o app inteiro. */
-const CLICKABLE_DIV_SELECTOR = '[data-nav],[data-day],[data-daydetail],[data-addex],[data-mood],[data-tpl],[data-goal],[data-session],[data-toggle],.theme-toggle,.card.interactive';
+const CLICKABLE_DIV_SELECTOR = '[data-nav],[data-day],[data-daydetail],[data-addex],[data-mood],[data-tpl],[data-goal],[data-session],[data-toggle],[data-freeworkout],.theme-toggle,.card.interactive';
 
 function makeInteractiveElementsAccessible(root){
   (root||document).querySelectorAll(CLICKABLE_DIV_SELECTOR).forEach(el=>{
@@ -615,21 +615,30 @@ function launchConfetti(){
 /* -------------------------------------------------------------------- */
 function weekProgress(){
   const days = Object.keys(state.weekPlan).filter(d=>getTemplate(state.weekPlan[d]).id!=='descanso');
-  const total = days.length;
+  const total = days.length || Number(state.user.availableDays)||0;
   const start = startOfWeek(new Date());
-  let done = 0;
-  for(let i=0;i<7;i++){
-    const d = new Date(start); d.setDate(start.getDate()+i);
-    const key = todayKey(d);
-    const planId = state.weekPlan[d.getDay()];
-    if(getTemplate(planId) && getTemplate(planId).id!=='descanso' && state.completedDates[key]) done++;
-  }
-  return {done, total};
+  const end = new Date(start.getTime()+7*86400000);
+  const done = Object.keys(state.completedDates||{}).filter(key=>{
+    const d = new Date(key+'T00:00:00');
+    return d>=start && d<end;
+  }).length;
+  return {done: total ? Math.min(done, total) : done, total: total || done};
 }
 
 
 function nextWorkout(){
   const d = new Date();
+  const today = todayKey(d);
+  if(!state.completedDates[today]){
+    const todayPlanId = state.weekPlan[d.getDay()];
+    const todayTpl = getTemplate(todayPlanId);
+    return {
+      template: todayTpl && todayTpl.id!=='descanso' ? todayTpl : null,
+      date:d,
+      isToday:true,
+      freeChoice:true,
+    };
+  }
   for(let i=0;i<7;i++){
     const check = new Date(d); check.setDate(d.getDate()+i);
     const planId = state.weekPlan[check.getDay()];
@@ -710,19 +719,21 @@ function renderDashboard(){
 
     <div class="card hero-card ${nw?'interactive':''}" id="nextWorkoutCard" ${nw?'style="cursor:pointer;"':''}>
       ${nw ? `
-        <div class="hero-eyebrow">${nw.isToday?'Treino de hoje':WEEKDAY_NAMES[nw.date.getDay()]}</div>
+        <div class="hero-eyebrow">${nw.freeChoice?'Escolha o treino de hoje':nw.isToday?'Treino de hoje':WEEKDAY_NAMES[nw.date.getDay()]}</div>
         <div style="display:flex;align-items:center;gap:16px;">
-          <div class="list-row-icon" style="width:56px;height:56px;font-size:24px;flex-shrink:0;">${MUSCLE_ICONS[nw.template.muscle]||'🏋️'}</div>
+          <div class="list-row-icon" style="width:56px;height:56px;font-size:24px;flex-shrink:0;">${nw.template ? (MUSCLE_ICONS[nw.template.muscle]||'🏋️') : '🏋️'}</div>
           <div style="min-width:0;">
-            <div style="font-weight:800;font-size:19px;">${nw.template.name}</div>
+            <div style="font-weight:800;font-size:19px;">${nw.template ? nw.template.name : 'Treino livre'}</div>
             <div class="hero-meta">
-              <span>⏱️ ${nw.template.estimatedTime} min</span>
-              <span>🏋️ ${nw.template.exercises.length} exercícios</span>
-              <span>🔥 ~${estimatedCalories(nw.template)} kcal</span>
+              ${nw.template ? `
+                <span>⏱️ ${nw.template.estimatedTime} min</span>
+                <span>🏋️ ${nw.template.exercises.length} exercícios</span>
+                <span>🔥 ~${estimatedCalories(nw.template)} kcal</span>
+              ` : '<span>Escolha qualquer treino salvo</span>'}
             </div>
           </div>
         </div>
-        <button class="btn btn-primary hero-cta" id="continueBtn">Começar treino</button>
+        <button class="btn btn-primary hero-cta" id="continueBtn">${nw.freeChoice?'Escolher treino':'Começar treino'}</button>
       ` : `<div class="empty-state"><span class="emoji">🎉</span>Você concluiu todos os treinos da semana! Aproveite pra descansar.</div>`}
     </div>
 
@@ -823,11 +834,13 @@ function renderDashboard(){
   if(nw){
     document.getElementById('nextWorkoutCard').addEventListener('click', (e)=>{
       if(e.target.id==='continueBtn') return;
-      startCheckinFlow(nw.template.id, todayKey(nw.date));
+      if(nw.freeChoice) openWorkoutPicker(todayKey(nw.date), nw.template?.id);
+      else startCheckinFlow(nw.template.id, todayKey(nw.date));
     });
     document.getElementById('continueBtn').addEventListener('click', (e)=>{
       e.stopPropagation();
-      startCheckinFlow(nw.template.id, todayKey(nw.date));
+      if(nw.freeChoice) openWorkoutPicker(todayKey(nw.date), nw.template?.id);
+      else startCheckinFlow(nw.template.id, todayKey(nw.date));
     });
   }
   wrap.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>navigate(el.dataset.nav, el.dataset.navtab)));
@@ -1034,7 +1047,13 @@ function openDayDetail(dateKey){
     openModal(`
       <h2 style="margin-bottom:6px;">${fmtDate(dateKey)}</h2>
       <p style="color:var(--text-dim);font-size:13px;">${meta.label}${plan.label && plan.label!==meta.label?': '+plan.label:''}</p>
+      ${dateKey<=todayKey() && !state.completedDates[dateKey] ? `<button class="btn btn-primary btn-block" style="margin-top:16px;" id="startFreeFromRestDay">Escolher treino</button>` : ''}
     `);
+    const freeBtn = document.getElementById('startFreeFromRestDay');
+    if(freeBtn) freeBtn.addEventListener('click', ()=>{
+      closeModal();
+      openWorkoutPicker(dateKey);
+    });
     return;
   }
 
@@ -1078,12 +1097,20 @@ function openDayDetail(dateKey){
         </div>`;
       }).join('')}
     </div>
-    ${!done && !isFuture ? `<button class="btn btn-primary btn-block" style="margin-top:10px;" id="startFromDayDetail">Iniciar treino</button>` : ''}
+    ${!done && !isFuture ? `
+      <button class="btn btn-primary btn-block" style="margin-top:10px;" id="startFromDayDetail">Iniciar treino sugerido</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:10px;" id="chooseFromDayDetail">Escolher outro treino</button>
+    ` : ''}
   `);
   const startBtn = document.getElementById('startFromDayDetail');
   if(startBtn) startBtn.addEventListener('click', ()=>{
     closeModal();
     startCheckinFlow(plan.templateId, dateKey);
+  });
+  const chooseBtn = document.getElementById('chooseFromDayDetail');
+  if(chooseBtn) chooseBtn.addEventListener('click', ()=>{
+    closeModal();
+    openWorkoutPicker(dateKey, plan.templateId);
   });
 }
 
@@ -1146,7 +1173,8 @@ function renderAgenda(){
     if(!isRest){ totalWorkoutDays++; if(done) doneCount++; }
     days.push({d, key, tpl, isToday, done, isRest});
   }
-  const weekComplete = isCurrentWeek && totalWorkoutDays>0 && doneCount===totalWorkoutDays;
+  const wp = weekProgress();
+  const weekComplete = isCurrentWeek && wp.total>0 && wp.done>=wp.total;
 
   wrap.innerHTML = `
     <div class="agenda-week-nav">
@@ -1192,9 +1220,13 @@ function renderAgenda(){
       const day = elm.dataset.day || elm.dataset.daydetail;
       const planId = state.weekPlan[day];
       const tpl = getTemplate(planId);
-      if(tpl.id==='descanso') return;
       const d = new Date(start); d.setDate(start.getDate() + ((Number(day)-start.getDay()+7)%7));
-      openWorkoutDetail(tpl.id, todayKey(d));
+      const dateKey = todayKey(d);
+      if(tpl.id==='descanso'){
+        if(dateKey<=todayKey() && !state.completedDates[dateKey]) openWorkoutPicker(dateKey);
+        return;
+      }
+      openWorkoutDetail(tpl.id, dateKey);
     });
   });
   document.getElementById('agendaPrevWeek').addEventListener('click', ()=>{ agendaWeekOffset--; renderAgenda(); });
@@ -1603,6 +1635,53 @@ function openWorkoutDetail(templateId, dateKey){
     closeModal();
     startCheckinFlow(templateId, dateKey);
   });
+}
+
+function workoutChoiceIds(preferredId){
+  const ids = allTemplateIds(false);
+  if(!preferredId || !ids.includes(preferredId)) return ids;
+  return [preferredId].concat(ids.filter(id=>id!==preferredId));
+}
+
+function openWorkoutPicker(dateKey, preferredId){
+  const ids = workoutChoiceIds(preferredId);
+  if(!ids.length){
+    openModal(`
+      <h2 style="margin-bottom:8px;">Nenhum treino disponível</h2>
+      <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">Crie ou restaure um treino para começar.</p>
+      <button class="btn btn-primary btn-block" id="goEditorFromPicker">Editar treinos</button>
+    `);
+    document.getElementById('goEditorFromPicker').addEventListener('click', ()=>{
+      closeModal();
+      navigate('treino', 'editor');
+    });
+    return;
+  }
+  openModal(`
+    <h2 style="margin-bottom:6px;">Escolher treino</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">${fmtDate(dateKey)} conta como treinado quando você concluir qualquer opção abaixo.</p>
+    <div>
+      ${ids.map(id=>{
+        const tpl = getTemplate(id);
+        return `<div class="list-row" data-freeworkout="${id}" style="cursor:pointer;">
+          <div class="list-row-icon">${MUSCLE_ICONS[tpl.muscle]||'🏋️'}</div>
+          <div class="list-row-body">
+            <div class="list-row-title">${tpl.name}${id===preferredId?' · sugerido':''}</div>
+            <div class="list-row-sub">${tpl.estimatedTime} min · ${tpl.exercises.length} exercícios</div>
+          </div>
+          <div class="list-row-trail">${icon('chevron-right',{size:16})}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  `);
+  document.querySelectorAll('[data-freeworkout]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const templateId = row.dataset.freeworkout;
+      closeModal();
+      startCheckinFlow(templateId, dateKey);
+    });
+  });
+  makeInteractiveElementsAccessible(document.getElementById('modalOverlay'));
 }
 
 /* ======================================================================
