@@ -2529,7 +2529,7 @@ function openExerciseModal(exId){
     <hr class="sep">
     <h4 style="font-size:13px;margin-bottom:6px;">✅ Execução correta</h4>
     <p style="font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:14px;">${e.execution}</p>
-    <h4 style="font-size:13px;margin-bottom:6px;">⚠️ Erros comuns</h4>
+    <h4 style="font-size:13px;margin-bottom:6px;">⚠️ Dicas e cuidados</h4>
     <p style="font-size:13px;color:var(--text-dim);line-height:1.6;">${e.mistakes}</p>
     <hr class="sep">
     <div class="mini-preview-row">
