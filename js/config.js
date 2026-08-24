@@ -25,7 +25,7 @@ const CONFIG = {
   },
 
   FEATURES: {
-    CLOUD_SYNC: false,        // sync.js já está pronto, mas fica desligado até existir backend
+    CLOUD_SYNC: true,         // perfil e novos treinos usam Supabase; LocalStorage continua como base local
     AUTH: true,
   },
 };
