@@ -18,6 +18,9 @@ function defaultUser(authUser){
     goal:'hipertrofia',
     availableDays:3,
     avgWorkoutTime:45,
+    level:'iniciante',
+    focusAreas:[],
+    limitations:[],
     theme:'dark',
   };
 }
@@ -32,6 +35,10 @@ function defaultState(authUser){
     customExercises:[],        // exercícios criados pelo usuário, no mesmo formato de EXERCISE_LIBRARY
     favoriteExercises:[],      // ids de exercícios favoritos
     favoriteWorkouts:[],       // ids de treinos favoritos
+    onboarding:{
+      completed:false,
+      completedAt:null,
+    },
     completedDates:{},        // { 'YYYY-MM-DD': workoutTemplateId }
     history:[],                // sessões completas
     goals:[
