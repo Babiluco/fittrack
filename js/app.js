@@ -637,6 +637,10 @@ function maybeGenerateNotifications(){
   const template = getTemplate(todayPlanId);
   if(template && template.id!=='descanso' && !state.completedDates[todayKey()]){
     showToast('Hora do treino!', `Hoje é dia de ${template.name}. Vamos lá?`, '⏰');
+  const today = todayKey();
+  const suggestion = smartWorkoutSuggestion(today);
+  if(suggestion.template && !state.completedDates[today]){
+    showToast('Hora do treino!', `Sugestão de hoje: ${suggestion.template.name}.`, '⏰');
   }
   // dias sem treinar
   const lastDate = Object.keys(state.completedDates).sort().pop();
@@ -681,6 +685,126 @@ function weekProgress(){
   return {done: total ? Math.min(done, total) : done, total: total || done};
 }
 
+function dayPlanFor(dateKey){
+  if(typeof Calendar !== 'undefined' && Calendar.getDayPlan){
+    return Calendar.getDayPlan(dateKey);
+  }
+  const d = new Date(dateKey+'T00:00:00');
+  const templateId = state.weekPlan[d.getDay()];
+  const tpl = getTemplate(templateId);
+  if(!tpl || tpl.id==='descanso') return {type:'rest', label:'Descanso', isOverride:false};
+  return {type:'workout', templateId, tpl, label:tpl.name, isOverride:false};
+}
+
+function recentWorkoutMuscles(days){
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - (days || 3));
+  return (state.history || [])
+    .filter(session=>new Date((session.date || session.completed_at || todayKey())+'T00:00:00') >= cutoff)
+    .map(session=>getTemplate(session.templateId)?.muscle)
+    .filter(Boolean);
+}
+
+function templateHasMuscle(tpl, muscle){
+  if(!tpl || !muscle) return false;
+  if(tpl.muscle===muscle) return true;
+  return (tpl.exercises || []).some(ex=>findExercise(ex.exerciseId)?.muscle===muscle);
+}
+
+function templateHasAnyMuscle(tpl, muscles){
+  return (muscles || []).some(muscle=>templateHasMuscle(tpl, muscle));
+}
+
+function workoutScore(templateId, context){
+  const tpl = getTemplate(templateId);
+  if(!tpl || tpl.id==='descanso') return {score:-999, reasons:[]};
+  const user = state.user || {};
+  const reasons = [];
+  let score = 0;
+
+  if(templateId === context.plannedId){
+    score += context.isOverride ? 38 : 28;
+    reasons.push(context.isOverride ? 'respeita sua remarcação' : 'segue seu plano');
+  }
+  if(isFavoriteWorkout(templateId)){
+    score += 18;
+    reasons.push('está salvo nos favoritos');
+  }
+
+  const avgTime = Number(user.avgWorkoutTime || 45);
+  const diff = Math.abs(Number(tpl.estimatedTime || avgTime) - avgTime);
+  if(diff <= 10){
+    score += 16;
+    reasons.push(`cabe em ${avgTime} min`);
+  } else if(diff > 25){
+    score -= 12;
+  }
+
+  const focus = Array.isArray(user.focusAreas) ? user.focusAreas : [];
+  if(focus.length && templateHasAnyMuscle(tpl, focus)){
+    score += 18;
+    reasons.push('combina com seu foco');
+  }
+
+  if(user.goal==='hipertrofia' && ['gluteos','pernas','peito','costas'].includes(tpl.muscle)){
+    score += 12;
+    reasons.push('bom para hipertrofia');
+  }
+  if(user.goal==='emagrecimento' && (tpl.id==='full_body_condicionamento' || templateHasMuscle(tpl, 'cardio'))){
+    score += 16;
+    reasons.push('ajuda no gasto semanal');
+  }
+  if(user.goal==='condicionamento' && (tpl.id==='full_body_condicionamento' || templateHasMuscle(tpl, 'cardio'))){
+    score += 18;
+    reasons.push('prioriza condicionamento');
+  }
+  if(user.goal==='forca' && !templateHasMuscle(tpl, 'cardio')){
+    score += 10;
+    reasons.push('mantém treino de força');
+  }
+
+  if(context.recentMuscles.includes(tpl.muscle)){
+    score -= 16;
+  } else if(tpl.muscle){
+    score += 8;
+    reasons.push('evita repetir o mesmo foco');
+  }
+
+  const limitations = Array.isArray(user.limitations) ? user.limitations : [];
+  if(limitations.includes('tempo') && Number(tpl.estimatedTime || 0) <= 60){
+    score += 10;
+    reasons.push('mais enxuto');
+  }
+
+  return {score, reasons:[...new Set(reasons)].slice(0,3)};
+}
+
+function smartWorkoutSuggestion(dateKey){
+  const plan = dayPlanFor(dateKey);
+  const plannedId = plan.type==='workout' ? plan.templateId : null;
+  const context = {
+    plannedId,
+    isOverride: !!plan.isOverride,
+    recentMuscles: recentWorkoutMuscles(3),
+  };
+  const ranked = allTemplateIds(false)
+    .map(id=>({id, tpl:getTemplate(id), result:workoutScore(id, context)}))
+    .filter(item=>item.tpl && item.tpl.id!=='descanso')
+    .sort((a,b)=>{
+      if(b.result.score !== a.result.score) return b.result.score - a.result.score;
+      return a.tpl.name.localeCompare(b.tpl.name);
+    });
+  const best = ranked[0] || null;
+  if(!best) return {template:null, templateId:null, plan, reason:'Escolha qualquer treino salvo.', alternatives:[]};
+  const alternatives = ranked.slice(1,4).map(item=>item.id);
+  return {
+    template:best.tpl,
+    templateId:best.id,
+    plan,
+    reason:best.result.reasons.join(' · ') || 'boa opção para hoje',
+    alternatives,
+  };
+}
 
 function nextWorkout(){
   const d = new Date();
@@ -688,8 +812,11 @@ function nextWorkout(){
   if(!state.completedDates[today]){
     const todayPlanId = state.weekPlan[d.getDay()];
     const todayTpl = getTemplate(todayPlanId);
+    const suggestion = smartWorkoutSuggestion(today);
     return {
       template: todayTpl && todayTpl.id!=='descanso' ? todayTpl : null,
+      template: suggestion.template,
+      suggestion,
       date:d,
       isToday:true,
       freeChoice:true,
@@ -701,6 +828,10 @@ function nextWorkout(){
     const tpl = getTemplate(planId);
     if(tpl && tpl.id!=='descanso' && !state.completedDates[todayKey(check)]){
       return {template:tpl, date:check, isToday:i===0};
+    const key = todayKey(check);
+    const plan = dayPlanFor(key);
+    if(plan.type==='workout' && plan.tpl && !state.completedDates[key]){
+      return {template:plan.tpl, suggestion:{template:plan.tpl, templateId:plan.templateId, plan, reason:plan.isOverride?'remarcado na agenda':'próximo no plano', alternatives:[]}, date:check, isToday:i===0};
     }
   }
   return null;
@@ -993,6 +1124,7 @@ function renderDashboard(){
     <div class="card hero-card ${nw?'interactive':''}" id="nextWorkoutCard" ${nw?'style="cursor:pointer;"':''}>
       ${nw ? `
         <div class="hero-eyebrow">${nw.freeChoice?'Escolha o treino de hoje':nw.isToday?'Treino de hoje':WEEKDAY_NAMES[nw.date.getDay()]}</div>
+        <div class="hero-eyebrow">${nw.freeChoice?'Sugestão de hoje':nw.isToday?'Treino de hoje':WEEKDAY_NAMES[nw.date.getDay()]}</div>
         <div style="display:flex;align-items:center;gap:16px;">
           <div class="list-row-icon" style="width:56px;height:56px;font-size:24px;flex-shrink:0;">${nw.template ? (MUSCLE_ICONS[nw.template.muscle]||'🏋️') : '🏋️'}</div>
           <div style="min-width:0;">
@@ -1004,9 +1136,16 @@ function renderDashboard(){
                 <span>🔥 ~${estimatedCalories(nw.template)} kcal</span>
               ` : '<span>Escolha qualquer treino salvo</span>'}
             </div>
+            ${nw.suggestion?.reason ? `<div style="font-size:12.5px;color:var(--text-dim);line-height:1.45;margin-top:6px;">${escapeHtml(nw.suggestion.reason)}</div>` : ''}
           </div>
         </div>
         <button class="btn btn-primary hero-cta" id="continueBtn">${nw.freeChoice?'Escolher treino':'Começar treino'}</button>
+        ${nw.freeChoice && nw.template ? `
+          <div class="hero-actions">
+            <button class="btn btn-primary hero-cta" id="startSuggestedBtn">Começar sugerido</button>
+            <button class="btn btn-ghost hero-cta" id="chooseWorkoutBtn">Escolher outro</button>
+          </div>
+        ` : nw.freeChoice ? `<button class="btn btn-primary hero-cta" id="chooseWorkoutBtn">Escolher treino</button>` : `<button class="btn btn-primary hero-cta" id="continueBtn">Começar treino</button>`}
       ` : `<div class="empty-state"><span class="emoji">🎉</span>Você concluiu todos os treinos da semana! Aproveite pra descansar.</div>`}
     </div>
 
@@ -1107,14 +1246,37 @@ function renderDashboard(){
   if(nw){
     document.getElementById('nextWorkoutCard').addEventListener('click', (e)=>{
       if(e.target.id==='continueBtn') return;
+      if(['continueBtn','startSuggestedBtn','chooseWorkoutBtn'].includes(e.target.id)) return;
       if(nw.freeChoice) openWorkoutPicker(todayKey(nw.date), nw.template?.id);
       else startCheckinFlow(nw.template.id, todayKey(nw.date));
     });
+    const continueBtn = document.getElementById('continueBtn');
+    if(continueBtn){
+      continueBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        startCheckinFlow(nw.template.id, todayKey(nw.date));
+      });
+    }
+    const startSuggestedBtn = document.getElementById('startSuggestedBtn');
+    if(startSuggestedBtn){
     document.getElementById('continueBtn').addEventListener('click', (e)=>{
       e.stopPropagation();
       if(nw.freeChoice) openWorkoutPicker(todayKey(nw.date), nw.template?.id);
       else startCheckinFlow(nw.template.id, todayKey(nw.date));
     });
+      startSuggestedBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        if(!nw.template) return openWorkoutPicker(todayKey(nw.date), null);
+        startCheckinFlow(nw.template.id, todayKey(nw.date));
+      });
+    }
+    const chooseWorkoutBtn = document.getElementById('chooseWorkoutBtn');
+    if(chooseWorkoutBtn){
+      chooseWorkoutBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        openWorkoutPicker(todayKey(nw.date), nw.template?.id);
+      });
+    }
   }
   wrap.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>navigate(el.dataset.nav, el.dataset.navtab)));
   makeInteractiveElementsAccessible(wrap);
@@ -1912,11 +2074,17 @@ function openWorkoutDetail(templateId, dateKey){
 
 function workoutChoiceIds(preferredId){
   ensureFavorites();
+  const context = {plannedId:preferredId, isOverride:false, recentMuscles:recentWorkoutMuscles(3)};
   const ids = allTemplateIds(false);
   const ids = allTemplateIds(false).sort((a,b)=>{
-    const aRank = a===preferredId ? 0 : isFavoriteWorkout(a) ? 1 : 2;
-    const bRank = b===preferredId ? 0 : isFavoriteWorkout(b) ? 1 : 2;
-    if(aRank!==bRank) return aRank-bRank;
+    const aPreferred = a===preferredId ? 1 : 0;
+    const bPreferred = b===preferredId ? 1 : 0;
+    if(aPreferred!==bPreferred) return bPreferred-aPreferred;
+    const aFav = isFavoriteWorkout(a) ? 1 : 0;
+    const bFav = isFavoriteWorkout(b) ? 1 : 0;
+    if(aFav!==bFav) return bFav-aFav;
+    const scoreDiff = workoutScore(b, context).score - workoutScore(a, context).score;
+    if(scoreDiff!==0) return scoreDiff;
     return getTemplate(a).name.localeCompare(getTemplate(b).name);
   });
   if(!preferredId || !ids.includes(preferredId)) return ids;
@@ -1959,11 +2127,13 @@ function renderWorkoutPickerList(dateKey, preferredId){
   list.innerHTML = ids.map(id=>{
     const tpl = getTemplate(id);
     const fav = isFavoriteWorkout(id);
+    const score = workoutScore(id, {plannedId:preferredId, isOverride:false, recentMuscles:recentWorkoutMuscles(3)});
+    const reason = score.reasons[0] ? ` · ${score.reasons[0]}` : '';
     return `<div class="list-row" data-freeworkout="${id}" style="cursor:pointer;">
       <div class="list-row-icon">${MUSCLE_ICONS[tpl.muscle]||'🏋️'}</div>
       <div class="list-row-body">
         <div class="list-row-title">${tpl.name}${id===preferredId?' · sugerido':''}${fav?' · salvo':''}</div>
-        <div class="list-row-sub">${tpl.estimatedTime} min · ${tpl.exercises.length} exercícios</div>
+        <div class="list-row-sub">${tpl.estimatedTime} min · ${tpl.exercises.length} exercícios${escapeHtml(reason)}</div>
       </div>
       <button class="btn btn-ghost btn-sm" data-fav-workout="${id}">${fav?'Salvo':'Favoritar'}</button>
     </div>`;
