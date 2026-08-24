@@ -44,6 +44,13 @@ function saveSupabaseProfileQuietly(){
   saveSupabaseProfile({silent:true});
 }
 
+function withTimeout(promise, ms, fallback){
+  return Promise.race([
+    promise,
+    new Promise(resolve=>setTimeout(()=>resolve(fallback), ms)),
+  ]);
+}
+
 /* -------------------------------------------------------------------- */
 /* Treinos e Progresso: mescla os overrides salvos pelo usuário      */
 /* por cima dos templates padrão (data.js nunca é alterado em si)      */
@@ -123,40 +130,45 @@ function allTemplateIds(includeRest){
 /* Boot                                                                  */
 /* -------------------------------------------------------------------- */
 async function boot(){
-  applyTheme();
-  setupKeyboardAccessibility();
-  setupAuthStateListener();
-
-  if(!CONFIG.FEATURES.AUTH){
-    state = activateUserStorage(null);
-    renderAuthenticatedApp();
-    hideLoader();
-    return;
-  }
-
-  if(!SupabaseClient.isConfigured()){
-    renderAuthScreen('config');
-    hideLoader();
-    return;
-  }
-
-  const session = await AUTH.getSession();
-  authUser = session?.user || null;
-  if(authUser){
-    state = activateUserStorage(authUser);
-    await loadSupabaseProfile();
+  try{
     applyTheme();
-    renderAuthenticatedApp();
-  } else {
-    state = defaultState();
-    renderAuthScreen(isPasswordRecoveryUrl() ? 'reset' : 'signin');
+    setupKeyboardAccessibility();
+    setupAuthStateListener();
+
+    if(!CONFIG.FEATURES.AUTH){
+      state = activateUserStorage(null);
+      renderAuthenticatedApp();
+      hideLoader();
+      return;
+    }
+
+    if(!SupabaseClient.isConfigured()){
+      renderAuthScreen('config');
+      hideLoader();
+      return;
+    }
+
+    const session = await withTimeout(AUTH.getSession(), 7000, null);
+    authUser = session?.user || null;
+    if(authUser){
+      state = activateUserStorage(authUser);
+      await loadSupabaseProfile();
+      applyTheme();
+      renderAuthenticatedApp();
+    } else {
+      state = defaultState();
+      renderAuthScreen(isPasswordRecoveryUrl() ? 'reset' : 'signin');
+    }
+    hideLoader();
+  }catch(error){
+    console.error('[FitTrack Boot] failed', error);
+    renderBootError();
+    hideLoader();
   }
-  hideLoader();
 }
 
 function renderAuthenticatedApp(){
   renderShell();
-  navigate('dashboard');
   navigate(shouldShowOnboarding() ? 'onboarding' : 'dashboard');
   maybeGenerateNotifications();
   checkForRecoverableSession();
@@ -168,6 +180,30 @@ function hideLoader(){
     const loader = document.getElementById('loader');
     if(loader){ loader.style.opacity='0'; setTimeout(()=>loader.remove(),400); }
   }, 500);
+}
+
+function renderBootError(){
+  const app = document.getElementById('app');
+  if(!app) return;
+  app.innerHTML = `
+    <main class="auth-page">
+      <section class="auth-panel">
+        <div class="auth-brand">
+          <img src="icons/icon-192.png" alt="" class="brand-mark">
+          <div>
+            <div class="brand-name">FitTrack</div>
+            <span>${CONFIG.VERSION}</span>
+          </div>
+        </div>
+        <div class="auth-copy">
+          <h1>Não foi possível carregar</h1>
+          <p>Atualize a página. Se continuar, limpe o cache do navegador e tente novamente.</p>
+        </div>
+        <button class="btn btn-primary btn-block" type="button" id="reloadAppBtn">Tentar novamente</button>
+      </section>
+    </main>
+  `;
+  document.getElementById('reloadAppBtn')?.addEventListener('click', ()=>window.location.reload());
 }
 
 function setupAuthStateListener(){
@@ -633,10 +669,6 @@ function pushNotification(title, message, emoji){
 }
 
 function maybeGenerateNotifications(){
-  const todayPlanId = state.weekPlan[new Date().getDay()];
-  const template = getTemplate(todayPlanId);
-  if(template && template.id!=='descanso' && !state.completedDates[todayKey()]){
-    showToast('Hora do treino!', `Hoje é dia de ${template.name}. Vamos lá?`, '⏰');
   const today = todayKey();
   const suggestion = smartWorkoutSuggestion(today);
   if(suggestion.template && !state.completedDates[today]){
@@ -810,11 +842,8 @@ function nextWorkout(){
   const d = new Date();
   const today = todayKey(d);
   if(!state.completedDates[today]){
-    const todayPlanId = state.weekPlan[d.getDay()];
-    const todayTpl = getTemplate(todayPlanId);
     const suggestion = smartWorkoutSuggestion(today);
     return {
-      template: todayTpl && todayTpl.id!=='descanso' ? todayTpl : null,
       template: suggestion.template,
       suggestion,
       date:d,
@@ -824,10 +853,6 @@ function nextWorkout(){
   }
   for(let i=0;i<7;i++){
     const check = new Date(d); check.setDate(d.getDate()+i);
-    const planId = state.weekPlan[check.getDay()];
-    const tpl = getTemplate(planId);
-    if(tpl && tpl.id!=='descanso' && !state.completedDates[todayKey(check)]){
-      return {template:tpl, date:check, isToday:i===0};
     const key = todayKey(check);
     const plan = dayPlanFor(key);
     if(plan.type==='workout' && plan.tpl && !state.completedDates[key]){
@@ -1123,7 +1148,6 @@ function renderDashboard(){
 
     <div class="card hero-card ${nw?'interactive':''}" id="nextWorkoutCard" ${nw?'style="cursor:pointer;"':''}>
       ${nw ? `
-        <div class="hero-eyebrow">${nw.freeChoice?'Escolha o treino de hoje':nw.isToday?'Treino de hoje':WEEKDAY_NAMES[nw.date.getDay()]}</div>
         <div class="hero-eyebrow">${nw.freeChoice?'Sugestão de hoje':nw.isToday?'Treino de hoje':WEEKDAY_NAMES[nw.date.getDay()]}</div>
         <div style="display:flex;align-items:center;gap:16px;">
           <div class="list-row-icon" style="width:56px;height:56px;font-size:24px;flex-shrink:0;">${nw.template ? (MUSCLE_ICONS[nw.template.muscle]||'🏋️') : '🏋️'}</div>
@@ -1139,7 +1163,6 @@ function renderDashboard(){
             ${nw.suggestion?.reason ? `<div style="font-size:12.5px;color:var(--text-dim);line-height:1.45;margin-top:6px;">${escapeHtml(nw.suggestion.reason)}</div>` : ''}
           </div>
         </div>
-        <button class="btn btn-primary hero-cta" id="continueBtn">${nw.freeChoice?'Escolher treino':'Começar treino'}</button>
         ${nw.freeChoice && nw.template ? `
           <div class="hero-actions">
             <button class="btn btn-primary hero-cta" id="startSuggestedBtn">Começar sugerido</button>
@@ -1245,7 +1268,6 @@ function renderDashboard(){
   document.getElementById('notifBtn').addEventListener('click', openNotifPanel);
   if(nw){
     document.getElementById('nextWorkoutCard').addEventListener('click', (e)=>{
-      if(e.target.id==='continueBtn') return;
       if(['continueBtn','startSuggestedBtn','chooseWorkoutBtn'].includes(e.target.id)) return;
       if(nw.freeChoice) openWorkoutPicker(todayKey(nw.date), nw.template?.id);
       else startCheckinFlow(nw.template.id, todayKey(nw.date));
@@ -1259,11 +1281,6 @@ function renderDashboard(){
     }
     const startSuggestedBtn = document.getElementById('startSuggestedBtn');
     if(startSuggestedBtn){
-    document.getElementById('continueBtn').addEventListener('click', (e)=>{
-      e.stopPropagation();
-      if(nw.freeChoice) openWorkoutPicker(todayKey(nw.date), nw.template?.id);
-      else startCheckinFlow(nw.template.id, todayKey(nw.date));
-    });
       startSuggestedBtn.addEventListener('click', (e)=>{
         e.stopPropagation();
         if(!nw.template) return openWorkoutPicker(todayKey(nw.date), null);
@@ -2075,7 +2092,6 @@ function openWorkoutDetail(templateId, dateKey){
 function workoutChoiceIds(preferredId){
   ensureFavorites();
   const context = {plannedId:preferredId, isOverride:false, recentMuscles:recentWorkoutMuscles(3)};
-  const ids = allTemplateIds(false);
   const ids = allTemplateIds(false).sort((a,b)=>{
     const aPreferred = a===preferredId ? 1 : 0;
     const bPreferred = b===preferredId ? 1 : 0;
@@ -2088,7 +2104,6 @@ function workoutChoiceIds(preferredId){
     return getTemplate(a).name.localeCompare(getTemplate(b).name);
   });
   if(!preferredId || !ids.includes(preferredId)) return ids;
-  return [preferredId].concat(ids.filter(id=>id!==preferredId));
   return ids;
 }
 
@@ -2174,29 +2189,12 @@ function openWorkoutPicker(dateKey, preferredId){
   openModal(`
     <h2 style="margin-bottom:6px;">Escolher treino</h2>
     <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">${fmtDate(dateKey)} conta como treinado quando você concluir qualquer opção abaixo.</p>
-    <div>
-      ${ids.map(id=>{
-        const tpl = getTemplate(id);
-        return `<div class="list-row" data-freeworkout="${id}" style="cursor:pointer;">
-          <div class="list-row-icon">${MUSCLE_ICONS[tpl.muscle]||'🏋️'}</div>
-          <div class="list-row-body">
-            <div class="list-row-title">${tpl.name}${id===preferredId?' · sugerido':''}</div>
-            <div class="list-row-sub">${tpl.estimatedTime} min · ${tpl.exercises.length} exercícios</div>
-          </div>
-          <div class="list-row-trail">${icon('chevron-right',{size:16})}</div>
-        </div>`;
-      }).join('')}
     <div class="field" style="margin-bottom:12px;"><input type="text" id="workoutPickerSearch" placeholder="Buscar treino..."></div>
     <div class="chip-row" id="workoutPickerFilters" style="margin-bottom:12px;">
       ${WORKOUT_PICKER_FILTERS.map(f=>`<button class="chip ${workoutPickerFilter===f.id?'active':''}" data-workout-picker-filter="${f.id}">${f.label}</button>`).join('')}
     </div>
     <div id="workoutPickerList"></div>
   `);
-  document.querySelectorAll('[data-freeworkout]').forEach(row=>{
-    row.addEventListener('click', ()=>{
-      const templateId = row.dataset.freeworkout;
-      closeModal();
-      startCheckinFlow(templateId, dateKey);
   document.getElementById('workoutPickerSearch').addEventListener('input', (event)=>{
     workoutPickerSearch = event.target.value;
     renderWorkoutPickerList(dateKey, preferredId);
@@ -2688,9 +2686,6 @@ function openExerciseReplacementModal(){
     }
     list.innerHTML = candidates.map(ex=>`
       <div class="list-row" data-replace-exercise="${ex.id}" style="cursor:pointer;">
-        <div class="list-row-icon">${MUSCLE_ICONS[ex.muscle]||'🏋️'}</div>
-        <div class="list-row-body">
-          <div class="list-row-title">${ex.name}</div>
           <div class="list-row-icon">${MUSCLE_ICONS[ex.muscle]||'🏋️'}</div>
           <div class="list-row-body">
           <div class="list-row-title">${ex.name}${isFavoriteExercise(ex.id)?' · salvo':''}</div>
@@ -3128,8 +3123,6 @@ function showCompletionScreen(session, extra){
 /* ======================================================================
    VIEW: EXERCÍCIOS
    ====================================================================== */
-const MUSCLE_FILTERS = ['todos','peito','costas','pernas','gluteos','ombros','biceps','triceps','abdomen','cardio'];
-const MUSCLE_LABELS = {todos:'Todos', peito:'Peito', costas:'Costas', pernas:'Pernas', gluteos:'Glúteos', ombros:'Ombros', biceps:'Bíceps', triceps:'Tríceps', abdomen:'Abdômen', cardio:'Cardio'};
 const MUSCLE_FILTERS = ['todos','favoritos','peito','costas','pernas','gluteos','ombros','biceps','triceps','abdomen','cardio'];
 const MUSCLE_LABELS = {todos:'Todos', favoritos:'Favoritos', peito:'Peito', costas:'Costas', pernas:'Pernas', gluteos:'Glúteos', ombros:'Ombros', biceps:'Bíceps', triceps:'Tríceps', abdomen:'Abdômen', cardio:'Cardio'};
 
@@ -3151,10 +3144,6 @@ function renderExercises(){
 
 function renderExGrid(){
   const grid = document.getElementById('exGrid');
-  const filtered = allExercises().filter(e=>
-    (exerciseFilter==='todos'||e.muscle===exerciseFilter) &&
-    e.name.toLowerCase().includes(exerciseSearch.toLowerCase())
-  );
   const filtered = allExercises()
     .filter(e=>
       (exerciseFilter==='todos'||(exerciseFilter==='favoritos' ? isFavoriteExercise(e.id) : e.muscle===exerciseFilter)) &&
@@ -3672,30 +3661,22 @@ function renderStats(){
   const lvl = xpProgress(state.xp||0);
   const insights = generateInsights();
   const missions = getWeeklyMissions();
-  const lw = lastWeekSummary();
   const overview = progressOverviewData();
   const highlights = recentProgressHighlights();
   const current = overview.current;
   const previous = overview.previous;
 
   wrap.innerHTML = `
-    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
     <div class="progress-toolbar">
       <button class="btn btn-primary" id="quickWeightBtn">⚖️ Registrar peso</button>
     </div>
 
-    <div class="card hero-card" style="margin-bottom:20px;">
-      <div class="hero-eyebrow">Nível ${lvl.level}</div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
-        <span style="font-family:var(--font-display);font-weight:800;font-size:20px;">${state.xp||0} XP</span>
-        <span style="font-size:12px;color:var(--text-dim);">Faltam ${lvl.next-(state.xp||0)} XP pro nível ${lvl.level+1}</span>
     <section class="card progress-overview">
       <div class="progress-overview-copy">
         <div class="hero-eyebrow">Resumo da semana</div>
         <h2>${current.count}/${overview.planned || current.count} treinos concluídos</h2>
         <p>${progressCoachMessage(overview)}</p>
       </div>
-      <div class="progress-track"><div class="progress-fill" style="width:${lvl.pct}%;"></div></div>
       <div class="progress-ring-large" style="--pct:${overview.pct};">
         <span>${overview.pct}%</span>
       </div>
@@ -3759,17 +3740,6 @@ function renderStats(){
         </div>
       `).join('')}
     </div>
-
-    ${lw.count>0?`
-      <div class="section-title">Resumo da semana passada</div>
-      <div class="card" style="margin-bottom:20px;">
-        <div class="grid grid-3">
-          <div class="stat-card"><span class="stat-label">Treinos</span><span class="stat-value">${lw.count}</span></div>
-          <div class="stat-card"><span class="stat-label">Volume de treino</span><span class="stat-value">${WorkoutProgression.formatKg(lw.volume)}</span></div>
-          <div class="stat-card"><span class="stat-label">Peso</span><span class="stat-value">${lw.weightStart&&lw.weightEnd?`${lw.weightEnd>lw.weightStart?'+':''}${WorkoutProgression.formatKg(Math.abs(lw.weightEnd-lw.weightStart))}`:'—'}</span></div>
-        </div>
-      </div>
-    `:''}
 
     <div class="grid grid-4" style="margin-bottom:10px;">
       <div class="card stat-card"><span class="stat-label">Peso inicial</span><span class="stat-value">${WorkoutProgression.formatKg(state.user.startWeight||state.user.weight)}</span></div>
