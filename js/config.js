@@ -6,8 +6,8 @@
    endereço de API). Nenhum outro arquivo deve mais cravar esses valores
    direto no meio do código — sempre referenciar CONFIG.*.
 
-   Hoje nada aqui conecta em lugar nenhum (API_URL é null, FEATURES estão
-   todas desligadas). É só a base pronta pra quando isso passar a existir.
+   O app já usa Supabase para autenticação, perfil e novos treinos concluídos.
+   O LocalStorage continua sendo a base local imediata do app.
    ========================================================================== */
 const CONFIG = {
   APP_NAME: 'FitTrack',
