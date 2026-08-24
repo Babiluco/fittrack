@@ -112,6 +112,15 @@ function muscleVisual(muscle, options){
     triceps:`<path class="mv-hot" d="M30 55c7 1 12 6 14 14l-5 27c-9-5-14-15-11-29l2-12Zm60 0c-7 1-12 6-14 14l5 27c9-5 14-15 11-29l-2-12Z"/>`,
     abdomen:`<path class="mv-hot" d="M48 62h24v10H48V62Zm-2 13h28v11H46V75Zm2 14h24v12H48V89Z"/>`,
     cardio:`<path class="mv-hot" d="M60 52c7-13 28-7 28 10 0 18-20 29-28 39-8-10-28-21-28-39 0-17 21-23 28-10Z"/>`,
+    peito:`<path class="mv-hot" d="M43 52c-7 0-12 4-15 10 7 6 17 8 27 4V53c-4-1-8-1-12-1Zm34 0c7 0 12 4 15 10-7 6-17 8-27 4V53c4-1 8-1 12-1Z"/>`,
+    costas:`<path class="mv-hot" d="M38 43c7 3 14 12 18 26l-9 27c-10-10-16-28-13-47l4-6Zm44 0c-7 3-14 12-18 26l9 27c10-10 16-28 13-47l-4-6Z"/>`,
+    pernas:`<path class="mv-hot" d="M42 92h16l-4 54H38l4-54Zm20 0h16l4 54H66l-4-54Z"/>`,
+    gluteos:`<path class="mv-hot" d="M41 80c5-8 13-11 19-7 0 13-10 20-23 18 0-4 1-8 4-11Zm38 0c-5-8-13-11-19-7 0 13 10 20 23 18 0-4-1-8-4-11Z"/>`,
+    ombros:`<path class="mv-hot" d="M28 45c8-8 17-7 23-3-4 8-11 12-22 13-2-2-3-6-1-10Zm64 0c-8-8-17-7-23-3 4 8 11 12 22 13 2-2 3-6 1-10Z"/>`,
+    biceps:`<path class="mv-hot" d="M25 61c7 2 11 7 12 14l-7 25c-8-5-11-15-7-28l2-11Zm70 0c-7 2-11 7-12 14l7 25c8-5 11-15 7-28l-2-11Z"/>`,
+    triceps:`<path class="mv-hot" d="M31 57c6 2 10 6 12 13l-5 25c-8-5-12-15-9-27l2-11Zm58 0c-6 2-10 6-12 13l5 25c8-5 12-15 9-27l-2-11Z"/>`,
+    abdomen:`<path class="mv-hot" d="M49 61h22v9H49v-9Zm-2 12h26v10H47V73Zm2 13h22v11H49V86Z"/>`,
+    cardio:`<path class="mv-hot" d="M43 64c5-7 12-8 17-3v37c-10-6-18-17-17-34Zm34 0c-5-7-12-8-17-3v37c10-6 18-17 17-34Z"/>`,
   }[muscle] || `<circle class="mv-hot" cx="60" cy="76" r="18"/>`;
   return `
     <div class="muscle-visual muscle-visual-${size} muscle-${muscle||'geral'}" role="img" aria-label="${escapeHtml(label)}">
@@ -127,75 +136,17 @@ function muscleVisual(muscle, options){
   `;
 }
 
-function exerciseVisualType(exercise){
-  const id = exercise?.id || '';
-  const name = String(exercise?.name || '').toLowerCase();
-  if(/puxada|barra_fixa|pullover/.test(id) || name.includes('puxada') || name.includes('barra fixa')) return 'pull';
-  if(/remada|face_pull|crucifixo_inverso|remo_ergometro/.test(id) || name.includes('remada')) return 'row';
-  if(/supino|crucifixo|crossover|voador|flexao/.test(id) || name.includes('supino') || name.includes('flexão')) return 'press';
-  if(/agachamento|sissy|hack|leg_press|extensora/.test(id) || name.includes('agachamento') || name.includes('leg press')) return 'squat';
-  if(/afundo|passada|step_up|bulgaro/.test(id) || name.includes('afundo') || name.includes('passada')) return 'lunge';
-  if(/hip_thrust|elevacao_pelvica|ponte/.test(id) || name.includes('hip thrust') || name.includes('ponte')) return 'hipThrust';
-  if(/stiff|romeno|terra|bom_dia|flexora|posterior/.test(id) || name.includes('stiff') || name.includes('terra')) return 'hinge';
-  if(/desenvolvimento|elevacao|arnold|remada_alta|encolhimento/.test(id) || name.includes('elevação')) return 'shoulder';
-  if(/rosca/.test(id) || name.includes('rosca')) return 'curl';
-  if(/triceps|mergulho/.test(id) || name.includes('tríceps')) return 'triceps';
-  if(/abdominal|prancha|crunch|dead_bug|bird_dog|mountain/.test(id) || exercise?.muscle==='abdomen') return 'core';
-  if(/esteira|caminhada|bike|eliptico|escada|corda|burpee|air_bike|polichinelo/.test(id) || exercise?.muscle==='cardio') return 'cardio';
-  return 'standing';
-}
+const EXERCISE_IMAGES = {
+  ex_puxada:'assets/exercises/ex_puxada.png',
+};
 
-function exerciseVisual(exercise, options){
-  const ex = exercise || {};
-  const size = options?.size || 'card';
-  const muscle = ex.muscle || 'geral';
-  const label = ex.name || MUSCLE_LABELS?.[muscle] || 'Exercício';
-  const type = exerciseVisualType(ex);
-  const hot = {
-    peito:`<path class="ev-hot" d="M84 64c-10-2-18 2-22 10 8 6 20 7 30 1l1-13c-3 0-6 0-9 2Z"/>`,
-    costas:`<path class="ev-hot" d="M72 55c-10 4-18 13-23 29l12 11c10-9 17-23 18-39l-7-1Z"/>`,
-    pernas:`<path class="ev-hot" d="M73 101l18 1-2 42H76l-3-43Zm-22-1l17 2-12 41H43l8-43Z"/>`,
-    gluteos:`<path class="ev-hot" d="M56 91c11-13 27-11 36 0-8 13-25 17-40 7 0-3 1-5 4-7Z"/>`,
-    ombros:`<path class="ev-hot" d="M67 48c10-9 25-6 31 4-6 8-18 13-31 9v-13Z"/>`,
-    biceps:`<path class="ev-hot" d="M92 73c9 1 16 7 18 16l-8 18c-10-3-16-12-14-24l4-10Z"/>`,
-    triceps:`<path class="ev-hot" d="M92 67c10 2 16 9 17 20l-9 19c-8-5-13-15-11-28l3-11Z"/>`,
-    abdomen:`<path class="ev-hot" d="M69 70h25v10H69V70Zm-2 13h28v11H67V83Zm2 14h24v12H69V97Z"/>`,
-    cardio:`<path class="ev-hot" d="M78 58c9-16 33-8 33 12 0 20-23 33-33 45-10-12-33-25-33-45 0-20 24-28 33-12Z"/>`,
-    geral:`<path class="ev-hot" d="M68 66h24v31H68z"/>`,
-  }[muscle] || `<path class="ev-hot" d="M68 66h24v31H68z"/>`;
-  const equipment = ['pull','row'].includes(type) ? `
-    <path class="ev-equip" d="M145 20v122M126 20h38M138 52h18M138 106h18"/>
-    <path class="ev-line" d="M145 24L98 70"/>
-  ` : ['press','hipThrust'].includes(type) ? `
-    <path class="ev-equip" d="M30 128h108M58 111h66"/>
-  ` : ['squat','lunge'].includes(type) ? `
-    <path class="ev-equip" d="M45 53h88"/>
-    <circle class="ev-equip-fill" cx="39" cy="53" r="9"/><circle class="ev-equip-fill" cx="139" cy="53" r="9"/>
-  ` : '';
-  const poses = {
-    pull:`<path class="ev-body" d="M48 88c19-22 40-25 58-17"/><path class="ev-body" d="M60 86l-18 28 26 12"/><path class="ev-body" d="M82 82l-3 38 30-2"/><path class="ev-body" d="M93 71l24-33"/><circle class="ev-body-fill" cx="73" cy="62" r="10"/>`,
-    row:`<path class="ev-body" d="M45 88c18-12 43-13 63-2"/><path class="ev-body" d="M58 91l-22 35 31 12"/><path class="ev-body" d="M88 91l9 38 31-7"/><path class="ev-body" d="M105 85l29-8"/><circle class="ev-body-fill" cx="72" cy="72" r="10"/>`,
-    press:`<path class="ev-body" d="M48 111h62"/><path class="ev-body" d="M64 101l34-28"/><path class="ev-body" d="M76 101l23-32"/><path class="ev-body" d="M56 112l-20 22M98 112l24 18"/><circle class="ev-body-fill" cx="61" cy="93" r="10"/>`,
-    squat:`<path class="ev-body" d="M66 63l29 33"/><path class="ev-body" d="M95 96l-28 34"/><path class="ev-body" d="M95 96l35 17"/><path class="ev-body" d="M66 63l-16 38"/><path class="ev-body" d="M50 101l17 29"/><circle class="ev-body-fill" cx="64" cy="49" r="10"/>`,
-    lunge:`<path class="ev-body" d="M73 61l17 43"/><path class="ev-body" d="M90 104l-34 34"/><path class="ev-body" d="M90 104l46 12"/><path class="ev-body" d="M73 61l-26 36"/><path class="ev-body" d="M47 97l16 40"/><circle class="ev-body-fill" cx="70" cy="47" r="10"/>`,
-    hipThrust:`<path class="ev-body" d="M42 107h87"/><path class="ev-body" d="M59 104l42-33"/><path class="ev-body" d="M101 71l35 33"/><path class="ev-body" d="M58 105l-25 29"/><circle class="ev-body-fill" cx="95" cy="61" r="10"/>`,
-    hinge:`<path class="ev-body" d="M51 83c23-13 45-9 66 9"/><path class="ev-body" d="M61 86l-18 52"/><path class="ev-body" d="M85 91l35 47"/><path class="ev-body" d="M112 93l16 32"/><circle class="ev-body-fill" cx="50" cy="72" r="10"/>`,
-    shoulder:`<path class="ev-body" d="M77 61v62"/><path class="ev-body" d="M77 75l-31-24M78 75l32-25"/><path class="ev-body" d="M77 123l-20 33M78 123l24 33"/><circle class="ev-body-fill" cx="77" cy="47" r="10"/>`,
-    curl:`<path class="ev-body" d="M76 61v62"/><path class="ev-body" d="M76 77l-28 24M77 77l29 22"/><path class="ev-body" d="M76 123l-21 33M77 123l24 33"/><circle class="ev-body-fill" cx="76" cy="47" r="10"/>`,
-    triceps:`<path class="ev-body" d="M78 61v62"/><path class="ev-body" d="M78 77l-34-12M78 77l36-14"/><path class="ev-body" d="M78 123l-20 33M79 123l24 33"/><circle class="ev-body-fill" cx="78" cy="47" r="10"/>`,
-    core:`<path class="ev-body" d="M38 115h87"/><path class="ev-body" d="M61 112l36-28"/><path class="ev-body" d="M97 84l39 28"/><path class="ev-body" d="M62 113l-25 21"/><circle class="ev-body-fill" cx="93" cy="75" r="10"/>`,
-    cardio:`<path class="ev-body" d="M79 62l10 51"/><path class="ev-body" d="M89 113l-35 35"/><path class="ev-body" d="M89 113l39 28"/><path class="ev-body" d="M79 76l-33 22M80 76l35-13"/><circle class="ev-body-fill" cx="76" cy="48" r="10"/>`,
-    standing:`<path class="ev-body" d="M76 61v62"/><path class="ev-body" d="M76 76l-31 22M77 76l32 22"/><path class="ev-body" d="M76 123l-21 33M77 123l24 33"/><circle class="ev-body-fill" cx="76" cy="47" r="10"/>`,
-  };
-  return `
-    <div class="exercise-visual exercise-visual-${size} muscle-${muscle}" role="img" aria-label="${escapeHtml(label)}">
-      <svg viewBox="0 0 170 170" aria-hidden="true" focusable="false">
-        ${equipment}
-        ${poses[type] || poses.standing}
-        ${hot}
-      </svg>
-    </div>
-  `;
+function exerciseMedia(exercise, options){
+  if(!exercise) return '🏋️';
+  const image = EXERCISE_IMAGES[exercise.id];
+  if(image){
+    return `<img class="exercise-photo" src="${image}" alt="${escapeHtml(exercise.name)}" loading="lazy">`;
+  }
+  return muscleVisual(exercise.muscle, options);
 }
 
 function ensureOnboarding(){
@@ -1657,7 +1608,7 @@ function openDayDetail(dateKey){
         const e = findExercise(ex.exerciseId);
         return `<div class="list-row">
           <div class="list-row-icon visual-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
-          <div class="list-row-icon visual-icon">${exerciseVisual(e, {size:'icon'})}</div>
+          <div class="list-row-icon visual-icon">${exerciseMedia(e, {size:'icon'})}</div>
           <div class="list-row-body">
             <div class="list-row-title">${e.name}</div>
             <div class="list-row-sub">${ex.sets} séries × ${ex.reps} reps ${ex.load?`· ${WorkoutProgression.formatKg(ex.load)}`:''}</div>
@@ -1916,7 +1867,7 @@ function renderEditorExercises(templateId){
       return `<div class="list-row draggable-row" style="align-items:flex-start;" data-exidx="${i}" data-exerciseid="${ex.exerciseId}">
         <div class="drag-handle" aria-label="Reordenar">⠿</div>
         <div class="list-row-icon visual-icon">${e ? muscleVisual(e.muscle, {size:'icon'}) : '🏋️'}</div>
-        <div class="list-row-icon visual-icon">${e ? exerciseVisual(e, {size:'icon'}) : '🏋️'}</div>
+        <div class="list-row-icon visual-icon">${exerciseMedia(e, {size:'icon'})}</div>
         <div class="list-row-body">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
             <div class="list-row-title">${e?e.name:ex.exerciseId}</div>
@@ -1958,7 +1909,7 @@ function renderAddExerciseSearch(templateId, query){
   results.innerHTML = matches.length ? matches.map(e=>`
     <div class="list-row add-exercise-row" data-addex="${e.id}" style="cursor:pointer;">
       <div class="list-row-icon visual-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
-      <div class="list-row-icon visual-icon">${exerciseVisual(e, {size:'icon'})}</div>
+      <div class="list-row-icon visual-icon">${exerciseMedia(e, {size:'icon'})}</div>
       <div class="list-row-body">
         <div class="list-row-title">${e.name}</div>
         <div class="list-row-sub">${capitalize(e.muscle)}</div>
@@ -2192,7 +2143,7 @@ function openWorkoutDetail(templateId, dateKey){
         const e = findExercise(ex.exerciseId);
         return `<div class="list-row">
           <div class="list-row-icon visual-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
-          <div class="list-row-icon visual-icon">${exerciseVisual(e, {size:'icon'})}</div>
+          <div class="list-row-icon visual-icon">${exerciseMedia(e, {size:'icon'})}</div>
           <div class="list-row-body">
             <div class="list-row-title">${e.name}</div>
             <div class="list-row-sub">${ex.sets} séries × ${ex.reps} reps ${ex.load?`· ${WorkoutProgression.formatKg(ex.load)}`:''}</div>
@@ -2599,7 +2550,7 @@ function renderRunnerExercise(){
     <div class="runner-body" id="runnerScrollArea">
       <div class="progress-track" style="max-width:400px;margin-bottom:20px;" role="progressbar" aria-valuenow="${Math.round(progressPct)}" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso do treino"><div class="progress-fill thin" style="width:${progressPct}%"></div></div>
       <div class="runner-exercise-media ${allDone?'complete':''}" id="runnerMedia">${muscleVisual(e.muscle, {size:'hero'})}</div>
-      <div class="runner-exercise-media ${allDone?'complete':''}" id="runnerMedia">${exerciseVisual(e, {size:'hero'})}</div>
+      <div class="runner-exercise-media ${allDone?'complete':''}" id="runnerMedia">${exerciseMedia(e, {size:'hero'})}</div>
       <div class="runner-title">${e.name}</div>
       <div class="runner-muscle">${capitalize(e.muscle)} · ${exDef.sets} séries × ${exDef.reps} reps · ⏱ ${exDef.rest||60}s descanso</div>
       ${renderPreviousPerformance(previous)}
@@ -2807,7 +2758,7 @@ function openExerciseReplacementModal(){
     list.innerHTML = candidates.map(ex=>`
       <div class="list-row" data-replace-exercise="${ex.id}" style="cursor:pointer;">
           <div class="list-row-icon visual-icon">${muscleVisual(ex.muscle, {size:'icon'})}</div>
-          <div class="list-row-icon visual-icon">${exerciseVisual(ex, {size:'icon'})}</div>
+          <div class="list-row-icon visual-icon">${exerciseMedia(ex, {size:'icon'})}</div>
           <div class="list-row-body">
           <div class="list-row-title">${ex.name}${isFavoriteExercise(ex.id)?' · salvo':''}</div>
           <div class="list-row-sub">${MUSCLE_LABELS[ex.muscle]||capitalize(ex.muscle)} · ${ex.desc.slice(0,64)}${ex.desc.length>64?'…':''}</div>
@@ -3278,7 +3229,7 @@ function renderExGrid(){
   grid.innerHTML = filtered.map(e=>`
     <div class="card exercise-card interactive" data-ex="${e.id}">
       <div class="exercise-thumb">${muscleVisual(e.muscle, {size:'card'})}</div>
-      <div class="exercise-thumb">${exerciseVisual(e, {size:'card'})}</div>
+      <div class="exercise-thumb">${exerciseMedia(e, {size:'card'})}</div>
       <div class="exercise-name">${e.name}</div>
       <div class="exercise-meta">${e.desc.slice(0,46)}${e.desc.length>46?'…':''}</div>
       <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
@@ -3302,7 +3253,7 @@ function openExerciseModal(exId){
   const favorite = isFavoriteExercise(exId);
   openModal(`
     <div class="exercise-thumb exercise-thumb-large">${muscleVisual(e.muscle, {size:'large'})}</div>
-    <div class="exercise-thumb exercise-thumb-large">${exerciseVisual(e, {size:'large'})}</div>
+    <div class="exercise-thumb exercise-thumb-large">${exerciseMedia(e, {size:'large'})}</div>
     <h2 style="margin:14px 0 4px;">${e.name}</h2>
     <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
     <p style="margin-top:14px;font-size:13.5px;color:var(--text-dim);line-height:1.6;">${e.desc}</p>
@@ -3363,7 +3314,7 @@ function openExerciseAnalytics(exId){
     <div class="exercise-history">
       <div class="exercise-history-header">
         <div class="exercise-history-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
-        <div class="exercise-history-icon">${exerciseVisual(e, {size:'icon'})}</div>
+        <div class="exercise-history-icon">${exerciseMedia(e, {size:'icon'})}</div>
         <div>
           <h2>${e.name}</h2>
           <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]||e.muscle||'Exercício'}</span>
