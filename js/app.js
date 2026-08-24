@@ -99,6 +99,34 @@ function toggleFavoriteWorkout(templateId){
   persist();
 }
 
+function muscleVisual(muscle, options){
+  const size = options?.size || 'md';
+  const label = MUSCLE_LABELS?.[muscle] || capitalize(muscle || 'exercício');
+  const hot = {
+    peito:`<path class="mv-hot" d="M47 50c-8-2-14 2-17 9 6 5 15 6 23 2V49c-2 0-4 0-6 1Zm26 0c8-2 14 2 17 9-6 5-15 6-23 2V49c2 0 4 0 6 1Z"/>`,
+    costas:`<path class="mv-hot" d="M35 42c6 1 14 8 19 21l-8 28c-9-10-15-25-11-49Zm50 0c-6 1-14 8-19 21l8 28c9-10 15-25 11-49Z"/>`,
+    pernas:`<path class="mv-hot" d="M43 92h17l-5 54H39l4-54Zm37 0H63l5 54h16l-4-54Z"/>`,
+    gluteos:`<path class="mv-hot" d="M41 80c6-9 16-12 24-6 0 16-15 24-29 17 0-4 2-8 5-11Zm38 0c-6-9-16-12-24-6 0 16 15 24 29 17 0-4-2-8-5-11Z"/>`,
+    ombros:`<path class="mv-hot" d="M25 45c9-12 20-10 26-4-4 7-12 13-23 14-3-2-4-6-3-10Zm70 0c-9-12-20-10-26-4 4 7 12 13 23 14 3-2 4-6 3-10Z"/>`,
+    biceps:`<path class="mv-hot" d="M24 58c7 2 12 7 14 15l-8 28c-10-4-13-16-8-29l2-14Zm72 0c-7 2-12 7-14 15l8 28c10-4 13-16 8-29l-2-14Z"/>`,
+    triceps:`<path class="mv-hot" d="M30 55c7 1 12 6 14 14l-5 27c-9-5-14-15-11-29l2-12Zm60 0c-7 1-12 6-14 14l5 27c9-5 14-15 11-29l-2-12Z"/>`,
+    abdomen:`<path class="mv-hot" d="M48 62h24v10H48V62Zm-2 13h28v11H46V75Zm2 14h24v12H48V89Z"/>`,
+    cardio:`<path class="mv-hot" d="M60 52c7-13 28-7 28 10 0 18-20 29-28 39-8-10-28-21-28-39 0-17 21-23 28-10Z"/>`,
+  }[muscle] || `<circle class="mv-hot" cx="60" cy="76" r="18"/>`;
+  return `
+    <div class="muscle-visual muscle-visual-${size} muscle-${muscle||'geral'}" role="img" aria-label="${escapeHtml(label)}">
+      <svg viewBox="0 0 120 160" aria-hidden="true" focusable="false">
+        <circle class="mv-body" cx="60" cy="23" r="14"/>
+        <path class="mv-body" d="M44 42c7-5 25-5 32 0 7 16 7 33 0 50H44c-7-17-7-34 0-50Z"/>
+        <path class="mv-body" d="M42 47c-13 2-21 14-22 31l-2 24c5 4 12 4 16 0l5-25c2-8 6-14 12-17l-9-13Z"/>
+        <path class="mv-body" d="M78 47c13 2 21 14 22 31l2 24c-5 4-12 4-16 0l-5-25c-2-8-6-14-12-17l9-13Z"/>
+        <path class="mv-body" d="M45 91h30l8 55c-5 4-12 4-17 1l-6-43-6 43c-5 3-12 3-17-1l8-55Z"/>
+        ${hot}
+      </svg>
+    </div>
+  `;
+}
+
 function ensureOnboarding(){
   state.onboarding = state.onboarding && typeof state.onboarding === 'object'
     ? state.onboarding
@@ -1557,7 +1585,7 @@ function openDayDetail(dateKey){
       ${tpl.exercises.map(ex=>{
         const e = findExercise(ex.exerciseId);
         return `<div class="list-row">
-          <div class="list-row-icon">${MUSCLE_ICONS[e.muscle]}</div>
+          <div class="list-row-icon visual-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
           <div class="list-row-body">
             <div class="list-row-title">${e.name}</div>
             <div class="list-row-sub">${ex.sets} séries × ${ex.reps} reps ${ex.load?`· ${WorkoutProgression.formatKg(ex.load)}`:''}</div>
@@ -1815,7 +1843,7 @@ function renderEditorExercises(templateId){
       const e = findExercise(ex.exerciseId);
       return `<div class="list-row draggable-row" style="align-items:flex-start;" data-exidx="${i}" data-exerciseid="${ex.exerciseId}">
         <div class="drag-handle" aria-label="Reordenar">⠿</div>
-        <div class="list-row-icon">${MUSCLE_ICONS[e?.muscle]||'🏋️'}</div>
+        <div class="list-row-icon visual-icon">${e ? muscleVisual(e.muscle, {size:'icon'}) : '🏋️'}</div>
         <div class="list-row-body">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
             <div class="list-row-title">${e?e.name:ex.exerciseId}</div>
@@ -1856,7 +1884,7 @@ function renderAddExerciseSearch(templateId, query){
     .slice(0, 8);
   results.innerHTML = matches.length ? matches.map(e=>`
     <div class="list-row add-exercise-row" data-addex="${e.id}" style="cursor:pointer;">
-      <div class="list-row-icon">${MUSCLE_ICONS[e.muscle]||'🏋️'}</div>
+      <div class="list-row-icon visual-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
       <div class="list-row-body">
         <div class="list-row-title">${e.name}</div>
         <div class="list-row-sub">${capitalize(e.muscle)}</div>
@@ -2089,7 +2117,7 @@ function openWorkoutDetail(templateId, dateKey){
       ${tpl.exercises.map(ex=>{
         const e = findExercise(ex.exerciseId);
         return `<div class="list-row">
-          <div class="list-row-icon">${MUSCLE_ICONS[e.muscle]}</div>
+          <div class="list-row-icon visual-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
           <div class="list-row-body">
             <div class="list-row-title">${e.name}</div>
             <div class="list-row-sub">${ex.sets} séries × ${ex.reps} reps ${ex.load?`· ${WorkoutProgression.formatKg(ex.load)}`:''}</div>
@@ -2495,7 +2523,7 @@ function renderRunnerExercise(){
     </div>
     <div class="runner-body" id="runnerScrollArea">
       <div class="progress-track" style="max-width:400px;margin-bottom:20px;" role="progressbar" aria-valuenow="${Math.round(progressPct)}" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso do treino"><div class="progress-fill thin" style="width:${progressPct}%"></div></div>
-      <div class="runner-exercise-media ${allDone?'complete':''}" id="runnerMedia">${MUSCLE_ICONS[e.muscle]||'🏋️'}</div>
+      <div class="runner-exercise-media ${allDone?'complete':''}" id="runnerMedia">${muscleVisual(e.muscle, {size:'hero'})}</div>
       <div class="runner-title">${e.name}</div>
       <div class="runner-muscle">${capitalize(e.muscle)} · ${exDef.sets} séries × ${exDef.reps} reps · ⏱ ${exDef.rest||60}s descanso</div>
       ${renderPreviousPerformance(previous)}
@@ -2702,7 +2730,7 @@ function openExerciseReplacementModal(){
     }
     list.innerHTML = candidates.map(ex=>`
       <div class="list-row" data-replace-exercise="${ex.id}" style="cursor:pointer;">
-          <div class="list-row-icon">${MUSCLE_ICONS[ex.muscle]||'🏋️'}</div>
+          <div class="list-row-icon visual-icon">${muscleVisual(ex.muscle, {size:'icon'})}</div>
           <div class="list-row-body">
           <div class="list-row-title">${ex.name}${isFavoriteExercise(ex.id)?' · salvo':''}</div>
           <div class="list-row-sub">${MUSCLE_LABELS[ex.muscle]||capitalize(ex.muscle)} · ${ex.desc.slice(0,64)}${ex.desc.length>64?'…':''}</div>
@@ -3172,7 +3200,7 @@ function renderExGrid(){
   if(filtered.length===0){ grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><span class="emoji">🔍</span>Nenhum exercício encontrado.</div>`; return; }
   grid.innerHTML = filtered.map(e=>`
     <div class="card exercise-card interactive" data-ex="${e.id}">
-      <div class="exercise-thumb">${MUSCLE_ICONS[e.muscle]}</div>
+      <div class="exercise-thumb">${muscleVisual(e.muscle, {size:'card'})}</div>
       <div class="exercise-name">${e.name}</div>
       <div class="exercise-meta">${e.desc.slice(0,46)}${e.desc.length>46?'…':''}</div>
       <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
@@ -3195,7 +3223,7 @@ function openExerciseModal(exId){
   const stats = WorkoutProgression.getExerciseStats(state, exId);
   const favorite = isFavoriteExercise(exId);
   openModal(`
-    <div class="exercise-thumb" style="aspect-ratio:16/8;font-size:52px;">${MUSCLE_ICONS[e.muscle]}</div>
+    <div class="exercise-thumb exercise-thumb-large">${muscleVisual(e.muscle, {size:'large'})}</div>
     <h2 style="margin:14px 0 4px;">${e.name}</h2>
     <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
     <p style="margin-top:14px;font-size:13.5px;color:var(--text-dim);line-height:1.6;">${e.desc}</p>
@@ -3255,7 +3283,7 @@ function openExerciseAnalytics(exId){
   openModal(`
     <div class="exercise-history">
       <div class="exercise-history-header">
-        <div class="exercise-history-icon">${MUSCLE_ICONS[e.muscle]||'🏋️'}</div>
+        <div class="exercise-history-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
         <div>
           <h2>${e.name}</h2>
           <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]||e.muscle||'Exercício'}</span>
