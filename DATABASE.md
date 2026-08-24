@@ -8,11 +8,17 @@ Important: LocalStorage remains the current source of truth until a future synch
 
 The reproducible SQL migration is:
 
-`supabase/migrations/001_initial_schema.sql`
+As migrations devem estar na pasta:
 
-`supabase/migrations/002_profile_fields.sql`
+`supabase/migrations/`
 
-Apply it in Supabase SQL Editor or with the Supabase CLI after connecting the project.
+Arquivos esperados:
+
+`001_initial_schema.sql`
+
+`002_profile_fields.sql`
+
+Se essa pasta não existir no projeto baixado, copie as migrations usadas no Supabase para o repositório antes de tentar recriar o banco.
 
 ## Ownership Model
 
