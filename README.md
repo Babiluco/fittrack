@@ -43,7 +43,7 @@ js/app.js            → lógica principal da aplicação (telas, navegação, i
 
 ## 🏗️ Arquitetura (preparado pra crescer)
 
-O app continua 100% offline, em Vanilla JS — sem framework, sem build step. Mas o `js/` agora tem uma separação clara de responsabilidades, pensando em uma futura migração pra um backend (ex: Supabase):
+O app continua em Vanilla JS — sem framework e sem build step. O LocalStorage ainda é a base local imediata do FitTrack, mas o app já usa Supabase para autenticação, perfil e sincronização de novos treinos concluídos.
 
 - **`database.js`** é o único lugar que deveria crescer quando o app ganhar um servidor de verdade — hoje ele já funciona (não é decoração), só que por baixo dos panos ainda salva tudo no `localStorage`.
 - **`api.js`**, **`auth.js`** e **`sync.js`** existem como esqueleto: todos os métodos já têm o nome e o formato de resposta que vão ter no futuro, mas nenhum se conecta a nada ainda — são só simulações (`mock:true` na resposta).
@@ -59,7 +59,7 @@ O app continua 100% offline, em Vanilla JS — sem framework, sem build step. Ma
 
 ## ⚠️ Sobre os dados
 
-O app salva o progresso no `localStorage` do navegador — ou seja, os dados ficam **no aparelho/navegador em que você usa**, não sincronizam automaticamente entre computador e celular.
+O app salva os dados no `localStorage` do navegador como base local imediata. Perfil e novos treinos concluídos também podem ser enviados ao Supabase quando o usuário está autenticado. Histórico antigo, medidas, metas e fotos ainda não são migrados automaticamente.
 
 ## 🎨 Estilo
 
