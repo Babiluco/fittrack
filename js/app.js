@@ -8,6 +8,8 @@ let currentView = 'dashboard';
 let currentProfileTab = 'perfil';
 let exerciseFilter = 'todos';
 let exerciseSearch = '';
+let workoutPickerFilter = 'todos';
+let workoutPickerSearch = '';
 let historyFilter = 'semana';
 let runnerCtx = null; // contexto ativo do treino em execução
 let authUser = null;
@@ -57,6 +59,37 @@ function getTemplate(id){
 
 function isCustomTemplate(id){
   return !!(state.customTemplates && state.customTemplates[id]);
+}
+
+function ensureFavorites(){
+  state.favoriteExercises = Array.isArray(state.favoriteExercises) ? state.favoriteExercises : [];
+  state.favoriteWorkouts = Array.isArray(state.favoriteWorkouts) ? state.favoriteWorkouts : [];
+}
+
+function isFavoriteExercise(exerciseId){
+  ensureFavorites();
+  return state.favoriteExercises.includes(exerciseId);
+}
+
+function isFavoriteWorkout(templateId){
+  ensureFavorites();
+  return state.favoriteWorkouts.includes(templateId);
+}
+
+function toggleFavoriteExercise(exerciseId){
+  ensureFavorites();
+  state.favoriteExercises = isFavoriteExercise(exerciseId)
+    ? state.favoriteExercises.filter(id=>id!==exerciseId)
+    : state.favoriteExercises.concat(exerciseId);
+  persist();
+}
+
+function toggleFavoriteWorkout(templateId){
+  ensureFavorites();
+  state.favoriteWorkouts = isFavoriteWorkout(templateId)
+    ? state.favoriteWorkouts.filter(id=>id!==templateId)
+    : state.favoriteWorkouts.concat(templateId);
+  persist();
 }
 
 /* Todos os treinos disponíveis: fixos (data.js) + criados pelo usuário.
@@ -1640,12 +1673,83 @@ function openWorkoutDetail(templateId, dateKey){
 }
 
 function workoutChoiceIds(preferredId){
+  ensureFavorites();
   const ids = allTemplateIds(false);
+  const ids = allTemplateIds(false).sort((a,b)=>{
+    const aRank = a===preferredId ? 0 : isFavoriteWorkout(a) ? 1 : 2;
+    const bRank = b===preferredId ? 0 : isFavoriteWorkout(b) ? 1 : 2;
+    if(aRank!==bRank) return aRank-bRank;
+    return getTemplate(a).name.localeCompare(getTemplate(b).name);
+  });
   if(!preferredId || !ids.includes(preferredId)) return ids;
   return [preferredId].concat(ids.filter(id=>id!==preferredId));
+  return ids;
+}
+
+const WORKOUT_PICKER_FILTERS = [
+  {id:'todos', label:'Todos'},
+  {id:'favoritos', label:'Favoritos'},
+  {id:'inferiores', label:'Inferiores'},
+  {id:'superiores', label:'Superiores'},
+  {id:'cardio', label:'Cardio'},
+  {id:'rapido', label:'Rápido'},
+];
+
+function workoutMatchesPickerFilter(templateId){
+  const tpl = getTemplate(templateId);
+  if(!tpl) return false;
+  if(workoutPickerFilter==='favoritos') return isFavoriteWorkout(templateId);
+  if(workoutPickerFilter==='cardio') return tpl.muscle==='cardio' || tpl.exercises.some(ex=>findExercise(ex.exerciseId)?.muscle==='cardio');
+  if(workoutPickerFilter==='rapido') return Number(tpl.estimatedTime||0)<=60;
+  if(workoutPickerFilter==='inferiores') return ['pernas','gluteos'].includes(tpl.muscle) || tpl.exercises.some(ex=>['pernas','gluteos'].includes(findExercise(ex.exerciseId)?.muscle));
+  if(workoutPickerFilter==='superiores') return ['peito','costas','ombros','biceps','triceps'].includes(tpl.muscle) || tpl.exercises.some(ex=>['peito','costas','ombros','biceps','triceps'].includes(findExercise(ex.exerciseId)?.muscle));
+  return true;
+}
+
+function renderWorkoutPickerList(dateKey, preferredId){
+  const list = document.getElementById('workoutPickerList');
+  if(!list) return;
+  const q = workoutPickerSearch.trim().toLowerCase();
+  const ids = workoutChoiceIds(preferredId).filter(id=>{
+    const tpl = getTemplate(id);
+    return workoutMatchesPickerFilter(id) && (!q || tpl.name.toLowerCase().includes(q) || (tpl.description||'').toLowerCase().includes(q));
+  });
+  if(!ids.length){
+    list.innerHTML = `<div class="empty-state compact"><span class="emoji">🔎</span>Nenhum treino encontrado.</div>`;
+    return;
+  }
+  list.innerHTML = ids.map(id=>{
+    const tpl = getTemplate(id);
+    const fav = isFavoriteWorkout(id);
+    return `<div class="list-row" data-freeworkout="${id}" style="cursor:pointer;">
+      <div class="list-row-icon">${MUSCLE_ICONS[tpl.muscle]||'🏋️'}</div>
+      <div class="list-row-body">
+        <div class="list-row-title">${tpl.name}${id===preferredId?' · sugerido':''}${fav?' · salvo':''}</div>
+        <div class="list-row-sub">${tpl.estimatedTime} min · ${tpl.exercises.length} exercícios</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" data-fav-workout="${id}">${fav?'Salvo':'Favoritar'}</button>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-freeworkout]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const templateId = row.dataset.freeworkout;
+      closeModal();
+      startCheckinFlow(templateId, dateKey);
+    });
+  });
+  list.querySelectorAll('[data-fav-workout]').forEach(btn=>{
+    btn.addEventListener('click', (event)=>{
+      event.stopPropagation();
+      toggleFavoriteWorkout(btn.dataset.favWorkout);
+      renderWorkoutPickerList(dateKey, preferredId);
+    });
+  });
+  makeInteractiveElementsAccessible(list);
 }
 
 function openWorkoutPicker(dateKey, preferredId){
+  workoutPickerFilter = 'todos';
+  workoutPickerSearch = '';
   const ids = workoutChoiceIds(preferredId);
   if(!ids.length){
     openModal(`
@@ -1674,15 +1778,29 @@ function openWorkoutPicker(dateKey, preferredId){
           <div class="list-row-trail">${icon('chevron-right',{size:16})}</div>
         </div>`;
       }).join('')}
+    <div class="field" style="margin-bottom:12px;"><input type="text" id="workoutPickerSearch" placeholder="Buscar treino..."></div>
+    <div class="chip-row" id="workoutPickerFilters" style="margin-bottom:12px;">
+      ${WORKOUT_PICKER_FILTERS.map(f=>`<button class="chip ${workoutPickerFilter===f.id?'active':''}" data-workout-picker-filter="${f.id}">${f.label}</button>`).join('')}
     </div>
+    <div id="workoutPickerList"></div>
   `);
   document.querySelectorAll('[data-freeworkout]').forEach(row=>{
     row.addEventListener('click', ()=>{
       const templateId = row.dataset.freeworkout;
       closeModal();
       startCheckinFlow(templateId, dateKey);
+  document.getElementById('workoutPickerSearch').addEventListener('input', (event)=>{
+    workoutPickerSearch = event.target.value;
+    renderWorkoutPickerList(dateKey, preferredId);
+  });
+  document.querySelectorAll('[data-workout-picker-filter]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      workoutPickerFilter = btn.dataset.workoutPickerFilter;
+      document.querySelectorAll('[data-workout-picker-filter]').forEach(el=>el.classList.toggle('active', el===btn));
+      renderWorkoutPickerList(dateKey, preferredId);
     });
   });
+  renderWorkoutPickerList(dateKey, preferredId);
   makeInteractiveElementsAccessible(document.getElementById('modalOverlay'));
 }
 
@@ -2130,6 +2248,8 @@ function replacementCandidates(query){
       const aSame = current && a.muscle===current.muscle ? 0 : 1;
       const bSame = current && b.muscle===current.muscle ? 0 : 1;
       if(aSame!==bSame) return aSame-bSame;
+      const favDiff = Number(isFavoriteExercise(b.id))-Number(isFavoriteExercise(a.id));
+      if(favDiff) return favDiff;
       return a.name.localeCompare(b.name);
     })
     .slice(0, 18);
@@ -2163,6 +2283,9 @@ function openExerciseReplacementModal(){
         <div class="list-row-icon">${MUSCLE_ICONS[ex.muscle]||'🏋️'}</div>
         <div class="list-row-body">
           <div class="list-row-title">${ex.name}</div>
+          <div class="list-row-icon">${MUSCLE_ICONS[ex.muscle]||'🏋️'}</div>
+          <div class="list-row-body">
+          <div class="list-row-title">${ex.name}${isFavoriteExercise(ex.id)?' · salvo':''}</div>
           <div class="list-row-sub">${MUSCLE_LABELS[ex.muscle]||capitalize(ex.muscle)} · ${ex.desc.slice(0,64)}${ex.desc.length>64?'…':''}</div>
         </div>
         <div class="list-row-trail">${icon('chevron-right',{size:16})}</div>
@@ -2599,6 +2722,8 @@ function showCompletionScreen(session, extra){
    ====================================================================== */
 const MUSCLE_FILTERS = ['todos','peito','costas','pernas','gluteos','ombros','biceps','triceps','abdomen','cardio'];
 const MUSCLE_LABELS = {todos:'Todos', peito:'Peito', costas:'Costas', pernas:'Pernas', gluteos:'Glúteos', ombros:'Ombros', biceps:'Bíceps', triceps:'Tríceps', abdomen:'Abdômen', cardio:'Cardio'};
+const MUSCLE_FILTERS = ['todos','favoritos','peito','costas','pernas','gluteos','ombros','biceps','triceps','abdomen','cardio'];
+const MUSCLE_LABELS = {todos:'Todos', favoritos:'Favoritos', peito:'Peito', costas:'Costas', pernas:'Pernas', gluteos:'Glúteos', ombros:'Ombros', biceps:'Bíceps', triceps:'Tríceps', abdomen:'Abdômen', cardio:'Cardio'};
 
 function renderExercises(){
   const wrap = document.getElementById('treinoTabContent');
@@ -2622,6 +2747,15 @@ function renderExGrid(){
     (exerciseFilter==='todos'||e.muscle===exerciseFilter) &&
     e.name.toLowerCase().includes(exerciseSearch.toLowerCase())
   );
+  const filtered = allExercises()
+    .filter(e=>
+      (exerciseFilter==='todos'||(exerciseFilter==='favoritos' ? isFavoriteExercise(e.id) : e.muscle===exerciseFilter)) &&
+      e.name.toLowerCase().includes(exerciseSearch.toLowerCase())
+    )
+    .sort((a,b)=>{
+      const favDiff = Number(isFavoriteExercise(b.id))-Number(isFavoriteExercise(a.id));
+      return favDiff || a.name.localeCompare(b.name);
+    });
   if(filtered.length===0){ grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><span class="emoji">🔍</span>Nenhum exercício encontrado.</div>`; return; }
   grid.innerHTML = filtered.map(e=>`
     <div class="card exercise-card interactive" data-ex="${e.id}">
@@ -2629,15 +2763,24 @@ function renderExGrid(){
       <div class="exercise-name">${e.name}</div>
       <div class="exercise-meta">${e.desc.slice(0,46)}${e.desc.length>46?'…':''}</div>
       <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
+      <button class="btn btn-ghost btn-sm" data-fav-ex="${e.id}" style="margin-top:10px;">${isFavoriteExercise(e.id)?'Salvo':'Favoritar'}</button>
     </div>`).join('');
   grid.querySelectorAll('[data-ex]').forEach(card=>{
     card.addEventListener('click', ()=>openExerciseModal(card.dataset.ex));
+  });
+  grid.querySelectorAll('[data-fav-ex]').forEach(btn=>{
+    btn.addEventListener('click', (event)=>{
+      event.stopPropagation();
+      toggleFavoriteExercise(btn.dataset.favEx);
+      renderExGrid();
+    });
   });
 }
 
 function openExerciseModal(exId){
   const e = findExercise(exId) || {id:exId, name:'Exercício removido', muscle:'todos', desc:'Este exercício apareceu em treinos antigos, mas não está mais na biblioteca.', execution:'Sem instruções salvas para este exercício.', mistakes:'Sem observações salvas para este exercício.'};
   const stats = WorkoutProgression.getExerciseStats(state, exId);
+  const favorite = isFavoriteExercise(exId);
   openModal(`
     <div class="exercise-thumb" style="aspect-ratio:16/8;font-size:52px;">${MUSCLE_ICONS[e.muscle]}</div>
     <h2 style="margin:14px 0 4px;">${e.name}</h2>
@@ -2657,9 +2800,15 @@ function openExerciseModal(exId){
       </div>
     </div>
     <button class="btn btn-primary btn-block" id="viewAnalyticsBtn" style="margin-top:16px;">Ver evolução</button>
+    <button class="btn btn-ghost btn-block" id="favoriteExerciseBtn" style="margin-top:10px;">${favorite?'Remover dos favoritos':'Favoritar exercício'}</button>
   `);
   const analyticsBtn = document.getElementById('viewAnalyticsBtn');
   if(analyticsBtn) analyticsBtn.addEventListener('click', ()=>openExerciseAnalytics(exId));
+  const favoriteBtn = document.getElementById('favoriteExerciseBtn');
+  if(favoriteBtn) favoriteBtn.addEventListener('click', ()=>{
+    toggleFavoriteExercise(exId);
+    openExerciseModal(exId);
+  });
 }
 
 let exerciseChartMetric = 'weight';
