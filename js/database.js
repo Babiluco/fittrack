@@ -24,16 +24,16 @@ const DB = {
     state.history.push(session);
     const ok = persist();
     if(!ok) return null;
-    if(typeof SYNC !== 'undefined' && typeof SYNC.syncWorkout === 'function'){
-      SYNC.syncWorkout(session).then(result=>{
-        if(result && result.syncedAt){
-          session.syncedAt = result.syncedAt;
-          persist();
-        }
-      }).catch(error=>{
-        console.error('[FitTrack DB] syncWorkout', error);
-      });
+    if(CONFIG.FEATURES.CLOUD_SYNC && typeof SYNC !== 'undefined' && typeof SYNC.syncWorkout === 'function'){
+  SYNC.syncWorkout(session).then(result=>{
+    if(result && result.syncedAt){
+      session.syncedAt = result.syncedAt;
+      persist();
     }
+  }).catch(error=>{
+    console.error('[FitTrack DB] syncWorkout', error);
+  });
+}
     return session;
   },
   deleteWorkout(sessionId){
