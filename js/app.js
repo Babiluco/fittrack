@@ -137,8 +137,130 @@ function muscleVisual(muscle, options){
 }
 
 const EXERCISE_IMAGES = {
+  ex_abducao_cabo:'assets/exercises/ex_abdutora.png',
+  ex_abducao_elastico:'assets/exercises/ex_abdutora.png',
+  ex_abdutora:'assets/exercises/ex_abdutora.png',
+  ex_afundo:'assets/exercises/ex_afundo.png',
+  ex_afundo_andando:'assets/exercises/ex_afundo.png',
+  ex_agachamento:'assets/exercises/ex_agachamento.png',
+  ex_agachamento_bulgaro:'assets/exercises/ex_afundo.png',
+  ex_agachamento_smith:'assets/exercises/ex_agachamento.png',
+  ex_agachamento_sumo:'assets/exercises/ex_agachamento.png',
+  ex_arnold_press:'assets/exercises/ex_desenvolvimento.png',
+  ex_barra_fixa_assistida:'assets/exercises/ex_puxada.png',
+  ex_bom_dia:'assets/exercises/ex_stiff.png',
+  ex_cadeira_extensora:'assets/exercises/ex_cadeira_extensora.png',
+  ex_cadeira_flexora:'assets/exercises/ex_mesa_flexora.png',
+  ex_coice_maquina:'assets/exercises/ex_kickback.png',
+  ex_crossover_alto:'assets/exercises/ex_crossover.png',
+  ex_crossover_baixo:'assets/exercises/ex_crossover.png',
+  ex_crucifixo:'assets/exercises/ex_crucifixo_maquina.png',
+  ex_crucifixo_inverso:'assets/exercises/ex_face_pull.png',
+  ex_crucifixo_maquina:'assets/exercises/ex_crucifixo_maquina.png',
+  ex_desenvolvimento:'assets/exercises/ex_desenvolvimento.png',
+  ex_desenvolvimento_maquina:'assets/exercises/ex_desenvolvimento.png',
+  ex_elevacao_frontal:'assets/exercises/ex_elevacao_lateral.png',
+  ex_elevacao_lateral:'assets/exercises/ex_elevacao_lateral.png',
+  ex_elevacao_lateral_cabo:'assets/exercises/ex_elevacao_lateral.png',
+  ex_elevacao_pelvica:'assets/exercises/ex_hip_thrust.png',
+  ex_encolhimento:'assets/exercises/ex_desenvolvimento.png',
+  ex_extensao_quadril_banco:'assets/exercises/ex_kickback.png',
+  ex_extensora_unilateral:'assets/exercises/ex_cadeira_extensora.png',
+  ex_face_pull:'assets/exercises/ex_face_pull.png',
+  ex_flexao_bracos:'assets/exercises/ex_flexao_bracos.png',
+  ex_flexao_inclinada:'assets/exercises/ex_flexao_bracos.png',
+  ex_flexora_unilateral:'assets/exercises/ex_mesa_flexora.png',
+  ex_hack_squat:'assets/exercises/ex_agachamento.png',
+  ex_hip_thrust:'assets/exercises/ex_hip_thrust.png',
+  ex_kickback:'assets/exercises/ex_kickback.png',
+  ex_leg_press:'assets/exercises/ex_leg_press.png',
+  ex_leg_press_unilateral:'assets/exercises/ex_leg_press.png',
+  ex_levantamento_romeno:'assets/exercises/ex_stiff.png',
+  ex_mesa_flexora:'assets/exercises/ex_mesa_flexora.png',
+  ex_panturrilha_legpress:'assets/exercises/ex_panturrilha.png',
+  ex_panturrilha_pe:'assets/exercises/ex_panturrilha.png',
+  ex_panturrilha_sentada:'assets/exercises/ex_panturrilha.png',
+  ex_passada:'assets/exercises/ex_afundo.png',
+  ex_ponte_gluteos:'assets/exercises/ex_hip_thrust.png',
+  ex_pullover_cabo:'assets/exercises/ex_pullover_cabo.png',
   ex_puxada:'assets/exercises/ex_puxada.png',
+  ex_puxada_neutra:'assets/exercises/ex_puxada.png',
+  ex_puxada_supinada:'assets/exercises/ex_puxada.png',
+  ex_remada:'assets/exercises/ex_remada_unilateral.png',
+  ex_remada_alta:'assets/exercises/ex_face_pull.png',
+  ex_remada_baixa:'assets/exercises/ex_remada_baixa.png',
+  ex_remada_cavalinho:'assets/exercises/ex_remada_baixa.png',
+  ex_remada_maquina:'assets/exercises/ex_remada_baixa.png',
+  ex_remada_serrote:'assets/exercises/ex_remada_unilateral.png',
+  ex_remada_unilateral:'assets/exercises/ex_remada_unilateral.png',
+  ex_rosca_alternada:'assets/exercises/ex_rosca_direta.png',
+  ex_rosca_cabo:'assets/exercises/ex_rosca_direta.png',
+  ex_rosca_concentrada:'assets/exercises/ex_rosca_direta.png',
+  ex_rosca_direta:'assets/exercises/ex_rosca_direta.png',
+  ex_rosca_inclinada:'assets/exercises/ex_rosca_direta.png',
+  ex_rosca_martelo:'assets/exercises/ex_rosca_direta.png',
+  ex_rosca_scott:'assets/exercises/ex_rosca_direta.png',
+  ex_sissy_squat:'assets/exercises/ex_agachamento.png',
+  ex_step_up:'assets/exercises/ex_afundo.png',
+  ex_stiff:'assets/exercises/ex_stiff.png',
+  ex_supino:'assets/exercises/ex_supino_halteres.png',
+  ex_supino_declinado:'assets/exercises/ex_supino_halteres.png',
+  ex_supino_halteres:'assets/exercises/ex_supino_halteres.png',
+  ex_supino_inclinado:'assets/exercises/ex_supino_halteres.png',
+  ex_supino_maquina:'assets/exercises/ex_supino_halteres.png',
+  ex_terra_sumo:'assets/exercises/ex_stiff.png',
+  ex_terra_tradicional:'assets/exercises/ex_stiff.png',
+  ex_triceps_barra_reta:'assets/exercises/ex_triceps_corda.png',
+  ex_triceps_coice:'assets/exercises/ex_kickback.png',
+  ex_triceps_corda:'assets/exercises/ex_triceps_corda.png',
+  ex_triceps_frances:'assets/exercises/ex_triceps_corda.png',
+  ex_triceps_maquina:'assets/exercises/ex_triceps_corda.png',
+  ex_triceps_mergulho_banco:'assets/exercises/ex_flexao_bracos.png',
+  ex_triceps_testa:'assets/exercises/ex_triceps_corda.png',
+  ex_voador_cabo:'assets/exercises/ex_crossover.png',
 };
+
+const EXERCISE_EMOJIS = {
+  ex_abdominal:'🔥',
+  ex_abdominal_infra:'🔥',
+  ex_abdominal_maquina:'🔥',
+  ex_air_bike:'🚴',
+  ex_bike:'🚴',
+  ex_bird_dog:'🧘',
+  ex_burpee:'⚡',
+  ex_caminhada_inclinada:'🚶',
+  ex_crunch_cabo:'🔥',
+  ex_dead_bug:'🧘',
+  ex_eliptico:'🏃',
+  ex_escada:'🪜',
+  ex_esteira:'🏃',
+  ex_elevacao_pernas:'🔥',
+  ex_mobilidade_quadril:'🧘',
+  ex_mobilidade_toracica:'🧘',
+  ex_mountain_climber:'⚡',
+  ex_polichinelo:'⭐',
+  ex_prancha:'⏱️',
+  ex_prancha_lateral:'⏱️',
+  ex_pular_corda:'🪢',
+  ex_remo_ergometro:'🚣',
+};
+
+const MUSCLE_EMOJIS = {
+  abdomen:'🔥',
+  biceps:'💪',
+  cardio:'🏃',
+  costas:'🏋️',
+  gluteos:'🍑',
+  ombros:'💪',
+  peito:'🏋️',
+  pernas:'🦵',
+  triceps:'💪',
+};
+
+function exerciseEmoji(exercise){
+  const emoji = EXERCISE_EMOJIS[exercise?.id] || MUSCLE_EMOJIS[exercise?.muscle] || '🏋️';
+  return `<span class="exercise-emoji" aria-hidden="true">${emoji}</span>`;
+}
 
 function exerciseMedia(exercise, options){
   if(!exercise) return '🏋️';
@@ -146,7 +268,7 @@ function exerciseMedia(exercise, options){
   if(image){
     return `<img class="exercise-photo" src="${image}" alt="${escapeHtml(exercise.name)}" loading="lazy">`;
   }
-  return muscleVisual(exercise.muscle, options);
+  return exerciseEmoji(exercise);
 }
 
 function ensureOnboarding(){
