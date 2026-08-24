@@ -228,6 +228,7 @@ main.view-wrap{
 .hero-card{
   position:relative;overflow:hidden;padding:26px;margin-bottom:20px;
   background:linear-gradient(155deg, var(--bg-card) 0%, var(--bg-card) 55%, rgba(51,85,255,.16) 100%);
+  background:var(--bg-card);
 }
 .hero-card::before{
   content:'';position:absolute;top:-60px;right:-60px;width:220px;height:220px;border-radius:50%;
@@ -240,6 +241,11 @@ main.view-wrap{
 .hero-meta{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font-size:12.5px;color:var(--text-dim);}
 .hero-meta span{display:inline-flex;align-items:center;gap:6px;}
 .hero-cta{width:100%;padding:17px 24px;font-size:15.5px;margin-top:26px;position:relative;}
+.hero-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:26px;}
+.hero-actions .hero-cta{margin-top:0;}
+@media (max-width:560px){
+  .hero-actions{grid-template-columns:1fr;}
+}
 
 /* Condensed progress strip — secondary to the hero CTA */
 /* Seções recolhíveis do Dashboard — <details> nativo: já vem com
