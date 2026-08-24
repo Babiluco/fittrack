@@ -29,6 +29,19 @@
 
 <div id="app"></div>
 
+<script>
+window.addEventListener('error', function(event){
+  console.error('[FitTrack] erro de carregamento', event.error || event.message);
+});
+setTimeout(function(){
+  var loader = document.getElementById('loader');
+  var app = document.getElementById('app');
+  if(!loader || !app || app.children.length) return;
+  loader.remove();
+  app.innerHTML = '<main class="auth-page"><section class="auth-panel"><div class="auth-brand"><img src="icons/icon-192.png" alt="" class="brand-mark"><div><div class="brand-name">FitTrack</div><span>1.0.0</span></div></div><div class="auth-copy"><h1>Não foi possível carregar</h1><p>Atualize a página. Se continuar, limpe o cache do navegador e tente novamente.</p></div><button class="btn btn-primary btn-block" type="button" onclick="window.location.reload()">Tentar novamente</button></section></main>';
+}, 9000);
+</script>
+
 <script defer src="js/config.js"></script>
 <script defer src="js/utils.js"></script>
 <script defer src="js/storage.js"></script>
