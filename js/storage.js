@@ -30,6 +30,8 @@ function defaultState(authUser){
     templateOverrides:{},      // { templateId: { exercises:[...] } } — Treinos e Progresso pelo usuário
     customTemplates:{},        // { templateId: {...} } — treinos criados do zero (ex: duplicados)
     customExercises:[],        // exercícios criados pelo usuário, no mesmo formato de EXERCISE_LIBRARY
+    favoriteExercises:[],      // ids de exercícios favoritos
+    favoriteWorkouts:[],       // ids de treinos favoritos
     completedDates:{},        // { 'YYYY-MM-DD': workoutTemplateId }
     history:[],                // sessões completas
     goals:[
