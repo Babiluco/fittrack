@@ -1729,7 +1729,6 @@ function openDayDetail(dateKey){
       ${tpl.exercises.map(ex=>{
         const e = findExercise(ex.exerciseId);
         return `<div class="list-row">
-          <div class="list-row-icon visual-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
           <div class="list-row-icon visual-icon">${exerciseMedia(e, {size:'icon'})}</div>
           <div class="list-row-body">
             <div class="list-row-title">${e.name}</div>
@@ -1988,7 +1987,6 @@ function renderEditorExercises(templateId){
       const e = findExercise(ex.exerciseId);
       return `<div class="list-row draggable-row" style="align-items:flex-start;" data-exidx="${i}" data-exerciseid="${ex.exerciseId}">
         <div class="drag-handle" aria-label="Reordenar">⠿</div>
-        <div class="list-row-icon visual-icon">${e ? muscleVisual(e.muscle, {size:'icon'}) : '🏋️'}</div>
         <div class="list-row-icon visual-icon">${exerciseMedia(e, {size:'icon'})}</div>
         <div class="list-row-body">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
@@ -2030,7 +2028,6 @@ function renderAddExerciseSearch(templateId, query){
     .slice(0, 8);
   results.innerHTML = matches.length ? matches.map(e=>`
     <div class="list-row add-exercise-row" data-addex="${e.id}" style="cursor:pointer;">
-      <div class="list-row-icon visual-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
       <div class="list-row-icon visual-icon">${exerciseMedia(e, {size:'icon'})}</div>
       <div class="list-row-body">
         <div class="list-row-title">${e.name}</div>
@@ -2264,7 +2261,6 @@ function openWorkoutDetail(templateId, dateKey){
       ${tpl.exercises.map(ex=>{
         const e = findExercise(ex.exerciseId);
         return `<div class="list-row">
-          <div class="list-row-icon visual-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
           <div class="list-row-icon visual-icon">${exerciseMedia(e, {size:'icon'})}</div>
           <div class="list-row-body">
             <div class="list-row-title">${e.name}</div>
@@ -2671,7 +2667,6 @@ function renderRunnerExercise(){
     </div>
     <div class="runner-body" id="runnerScrollArea">
       <div class="progress-track" style="max-width:400px;margin-bottom:20px;" role="progressbar" aria-valuenow="${Math.round(progressPct)}" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso do treino"><div class="progress-fill thin" style="width:${progressPct}%"></div></div>
-      <div class="runner-exercise-media ${allDone?'complete':''}" id="runnerMedia">${muscleVisual(e.muscle, {size:'hero'})}</div>
       <div class="runner-exercise-media ${allDone?'complete':''}" id="runnerMedia">${exerciseMedia(e, {size:'hero'})}</div>
       <div class="runner-title">${e.name}</div>
       <div class="runner-muscle">${capitalize(e.muscle)} · ${exDef.sets} séries × ${exDef.reps} reps · ⏱ ${exDef.rest||60}s descanso</div>
