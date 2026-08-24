@@ -565,12 +565,14 @@ main.view-wrap{
 .exercise-thumb{
   width:100%;aspect-ratio:16/10;border-radius:var(--radius-sm);
   background:linear-gradient(135deg,var(--bg-elevated),var(--bg-card-hover));
-  display:flex;align-items:center;justify-content:center;font-size:34px;margin-bottom:10px;
   display:flex;align-items:center;justify-content:center;margin-bottom:10px;
   border:1px solid var(--border);
   overflow:hidden;
 }
 .exercise-thumb-large{aspect-ratio:16/8;margin-bottom:14px;}
+.exercise-photo{width:100%;height:100%;object-fit:contain;display:block;background:#fff;}
+.visual-icon .exercise-photo{border-radius:10px;object-fit:cover;}
+.runner-exercise-media .exercise-photo{border-radius:var(--radius-lg);object-fit:contain;padding:8px;}
 .exercise-name{font-weight:700;font-size:14px;}
 .exercise-meta{font-size:11.5px;color:var(--text-dim);margin-top:3px;}
 .muscle-tag{
@@ -582,6 +584,7 @@ main.view-wrap{
 .muscle-visual{
   width:100%;height:100%;display:flex;align-items:center;justify-content:center;
   color:var(--accent);
+  color:#d65a4a;
 }
 .muscle-visual svg{width:100%;height:100%;max-width:128px;display:block;}
 .muscle-visual-icon svg{max-width:40px;}
@@ -590,6 +593,8 @@ main.view-wrap{
 .muscle-visual-hero svg{max-width:230px;}
 .mv-body{fill:var(--bg-card);stroke:var(--border);stroke-width:2;stroke-linejoin:round;}
 .mv-hot{fill:currentColor;stroke:rgba(255,255,255,.18);stroke-width:1.5;stroke-linejoin:round;}
+.mv-body{fill:rgba(255,255,255,.025);stroke:#30303a;stroke-width:2;stroke-linejoin:round;}
+.mv-hot{fill:currentColor;stroke:rgba(255,255,255,.16);stroke-width:1.2;stroke-linejoin:round;opacity:.92;}
 .visual-icon{padding:3px;overflow:hidden;}
 .muscle-peito{color:#ef5f7a;}
 .muscle-costas{color:#4f8ef7;}
@@ -600,6 +605,8 @@ main.view-wrap{
 .muscle-triceps{color:#fb7185;}
 .muscle-abdomen{color:#facc15;}
 .muscle-cardio{color:#ef4444;}
+.muscle-peito,.muscle-costas,.muscle-pernas,.muscle-gluteos,.muscle-ombros,.muscle-biceps,.muscle-triceps,.muscle-abdomen,.muscle-cardio{color:#d65a4a;}
+body.light .mv-body{fill:#f7f7fc;stroke:#c8c8d4;}
 
 .exercise-visual{
   width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#c94a3f;
