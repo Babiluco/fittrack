@@ -646,17 +646,33 @@ function navigate(view, subTab){
     profile: renderProfile,
   };
   (renderers[view]||renderDashboard)();
-  window.scrollTo({top:0,behavior:'smooth'});
+  const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.scrollTo({top:0,behavior:prefersReducedMotion?'auto':'smooth'});
 }
 
 /* -------------------------------------------------------------------- */
 /* Toasts / notificações                                                */
 /* -------------------------------------------------------------------- */
 function showToast(title, message, emoji){
-  const wrap = document.getElementById('toastWrap');
+  let wrap = document.getElementById('toastWrap');
+  if(!wrap){
+    wrap = document.createElement('div');
+    wrap.className = 'toast-wrap';
+    wrap.id = 'toastWrap';
+    document.body.appendChild(wrap);
+  }
   const el = document.createElement('div');
   el.className = 'toast';
-  el.innerHTML = `<div style="font-size:18px;">${emoji||'🔔'}</div><div><b>${title}</b><span>${message}</span></div>`;
+  const iconEl = document.createElement('div');
+  iconEl.className = 'toast-icon';
+  iconEl.textContent = emoji || '🔔';
+  const body = document.createElement('div');
+  const titleEl = document.createElement('b');
+  titleEl.textContent = title || 'FitTrack';
+  const messageEl = document.createElement('span');
+  messageEl.textContent = message || '';
+  body.append(titleEl, messageEl);
+  el.append(iconEl, body);
   wrap.appendChild(el);
   setTimeout(()=>{ el.style.transition='opacity .4s, transform .4s'; el.style.opacity='0'; el.style.transform='translateX(30px)'; setTimeout(()=>el.remove(),400); }, 4200);
 }
