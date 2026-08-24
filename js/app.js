@@ -2874,7 +2874,6 @@ function openExerciseReplacementModal(){
     }
     list.innerHTML = candidates.map(ex=>`
       <div class="list-row" data-replace-exercise="${ex.id}" style="cursor:pointer;">
-          <div class="list-row-icon visual-icon">${muscleVisual(ex.muscle, {size:'icon'})}</div>
           <div class="list-row-icon visual-icon">${exerciseMedia(ex, {size:'icon'})}</div>
           <div class="list-row-body">
           <div class="list-row-title">${ex.name}${isFavoriteExercise(ex.id)?' · salvo':''}</div>
@@ -3345,7 +3344,6 @@ function renderExGrid(){
   if(filtered.length===0){ grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><span class="emoji">🔍</span>Nenhum exercício encontrado.</div>`; return; }
   grid.innerHTML = filtered.map(e=>`
     <div class="card exercise-card interactive" data-ex="${e.id}">
-      <div class="exercise-thumb">${muscleVisual(e.muscle, {size:'card'})}</div>
       <div class="exercise-thumb">${exerciseMedia(e, {size:'card'})}</div>
       <div class="exercise-name">${e.name}</div>
       <div class="exercise-meta">${e.desc.slice(0,46)}${e.desc.length>46?'…':''}</div>
@@ -3369,7 +3367,6 @@ function openExerciseModal(exId){
   const stats = WorkoutProgression.getExerciseStats(state, exId);
   const favorite = isFavoriteExercise(exId);
   openModal(`
-    <div class="exercise-thumb exercise-thumb-large">${muscleVisual(e.muscle, {size:'large'})}</div>
     <div class="exercise-thumb exercise-thumb-large">${exerciseMedia(e, {size:'large'})}</div>
     <h2 style="margin:14px 0 4px;">${e.name}</h2>
     <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
@@ -3430,7 +3427,6 @@ function openExerciseAnalytics(exId){
   openModal(`
     <div class="exercise-history">
       <div class="exercise-history-header">
-        <div class="exercise-history-icon">${muscleVisual(e.muscle, {size:'icon'})}</div>
         <div class="exercise-history-icon">${exerciseMedia(e, {size:'icon'})}</div>
         <div>
           <h2>${e.name}</h2>
