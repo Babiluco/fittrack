@@ -3591,6 +3591,81 @@ function openSessionDetail(id){
 /* ======================================================================
    VIEW: ESTATÍSTICAS
    ====================================================================== */
+function sessionsInRange(fromDate, toDate){
+  return (state.history||[]).filter(session=>{
+    const date = new Date(session.date+'T00:00:00');
+    return date>=fromDate && date<toDate;
+  });
+}
+
+function summaryForSessions(sessions){
+  const volume = sessions.reduce((sum,session)=>sum+(Number(session.volume)||0),0);
+  const duration = sessions.reduce((sum,session)=>sum+(Number(session.duration)||0),0);
+  const calories = sessions.reduce((sum,session)=>sum+(Number(session.calories)||0),0);
+  const muscleCounts = {};
+  sessions.forEach(session=>{
+    const muscle = getTemplate(session.templateId)?.muscle;
+    if(muscle) muscleCounts[muscle] = (muscleCounts[muscle]||0)+1;
+  });
+  const topMuscle = Object.entries(muscleCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || null;
+  return {
+    sessions,
+    count:sessions.length,
+    volume,
+    duration,
+    calories,
+    avgDuration:sessions.length ? Math.round(duration/sessions.length) : 0,
+    topMuscle,
+    bestSession:sessions.reduce((best,session)=>!best || (session.volume||0)>(best.volume||0) ? session : best, null),
+  };
+}
+
+function progressOverviewData(){
+  const start = startOfWeek(new Date());
+  const end = new Date(start.getTime()+7*86400000);
+  const previousStart = new Date(start.getTime()-7*86400000);
+  const previousEnd = start;
+  const current = summaryForSessions(sessionsInRange(start, end));
+  const previous = summaryForSessions(sessionsInRange(previousStart, previousEnd));
+  const planned = weekProgress().total || Number(state.user.availableDays)||0;
+  const pct = planned ? Math.min(100, Math.round(current.count/planned*100)) : 0;
+  return {current, previous, planned, pct};
+}
+
+function deltaText(current, previous, unit){
+  const delta = current - previous;
+  if(!previous && !current) return 'sem registro ainda';
+  if(!previous && current) return 'começo da semana';
+  if(delta===0) return 'igual à semana passada';
+  const sign = delta>0 ? '+' : '-';
+  const value = Math.abs(delta);
+  return `${sign}${unit==='kg' ? WorkoutProgression.formatKg(value) : Math.round(value)+unit} vs semana passada`;
+}
+
+function progressCoachMessage(overview){
+  const {current, previous, planned, pct} = overview;
+  if(current.count===0) return 'Comece com um treino hoje. Qualquer treino concluído já conta para sua consistência.';
+  if(planned && current.count>=planned) return 'Você bateu a meta semanal de treinos. Agora vale preservar recuperação e qualidade.';
+  if(previous.count && current.count>previous.count) return 'Você já treinou mais do que na semana passada. Ótimo sinal de constância.';
+  if(pct>=60) return 'Semana bem encaminhada. Mais um treino deixa sua consistência muito forte.';
+  return 'Você já começou a semana. Escolha o treino que couber melhor hoje e mantenha o ritmo.';
+}
+
+function recentProgressHighlights(){
+  const prs = Analytics.detectPRs().slice(0,3);
+  const lastSession = [...(state.history||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];
+  const highlights = prs.map(pr=>({type:'pr', icon:'🏆', title:pr.label, detail:`${pr.value}${pr.date?' · '+fmtDate(pr.date):''}`}));
+  if(lastSession){
+    highlights.push({
+      type:'session',
+      icon:'📋',
+      title:`Último treino: ${lastSession.name}`,
+      detail:`${fmtDate(lastSession.date)} · ${lastSession.duration} min · ${WorkoutProgression.formatKg(lastSession.volume||0)} volume`,
+    });
+  }
+  return highlights.slice(0,4);
+}
+
 function renderStats(){
   const wrap = document.getElementById('progressoTabContent');
   const maxLoad = Math.max(0, ...Object.values(state.exerciseLoads).flat().map(l=>l.weight));
@@ -3598,9 +3673,14 @@ function renderStats(){
   const insights = generateInsights();
   const missions = getWeeklyMissions();
   const lw = lastWeekSummary();
+  const overview = progressOverviewData();
+  const highlights = recentProgressHighlights();
+  const current = overview.current;
+  const previous = overview.previous;
 
   wrap.innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+    <div class="progress-toolbar">
       <button class="btn btn-primary" id="quickWeightBtn">⚖️ Registrar peso</button>
     </div>
 
@@ -3609,8 +3689,23 @@ function renderStats(){
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
         <span style="font-family:var(--font-display);font-weight:800;font-size:20px;">${state.xp||0} XP</span>
         <span style="font-size:12px;color:var(--text-dim);">Faltam ${lvl.next-(state.xp||0)} XP pro nível ${lvl.level+1}</span>
+    <section class="card progress-overview">
+      <div class="progress-overview-copy">
+        <div class="hero-eyebrow">Resumo da semana</div>
+        <h2>${current.count}/${overview.planned || current.count} treinos concluídos</h2>
+        <p>${progressCoachMessage(overview)}</p>
       </div>
       <div class="progress-track"><div class="progress-fill" style="width:${lvl.pct}%;"></div></div>
+      <div class="progress-ring-large" style="--pct:${overview.pct};">
+        <span>${overview.pct}%</span>
+      </div>
+    </section>
+
+    <div class="grid grid-4 progress-kpi-grid">
+      <div class="card stat-card"><span class="stat-label">Treinos</span><span class="stat-value">${current.count}</span><span class="stat-sub">${deltaText(current.count, previous.count, '')}</span></div>
+      <div class="card stat-card"><span class="stat-label">Volume</span><span class="stat-value">${WorkoutProgression.formatKg(current.volume)}</span><span class="stat-sub">${deltaText(current.volume, previous.volume, 'kg')}</span></div>
+      <div class="card stat-card"><span class="stat-label">Tempo</span><span class="stat-value">${current.duration}<span style="font-size:13px;color:var(--text-dim);">min</span></span><span class="stat-sub">${deltaText(current.duration, previous.duration, 'min')}</span></div>
+      <div class="card stat-card"><span class="stat-label">Foco principal</span><span class="stat-value" style="font-size:18px;">${current.topMuscle ? MUSCLE_LABELS[current.topMuscle]||current.topMuscle : '—'}</span><span class="stat-sub">${current.avgDuration ? `média ${current.avgDuration} min` : 'sem média ainda'}</span></div>
     </div>
 
     ${insights.length?`
@@ -3619,6 +3714,35 @@ function renderStats(){
         ${insights.map(i=>`<div class="card insight-card ${i.tone==='success'?'insight-success':''}">${i.text}</div>`).join('')}
       </div>
     `:''}
+
+    <div class="progress-split">
+      <section>
+        <div class="section-title">Destaques recentes</div>
+        <div class="progress-highlight-list">
+          ${highlights.length ? highlights.map(item=>`
+            <div class="card mini-preview-row">
+              <div class="list-row-icon">${item.icon}</div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:700;font-size:14px;">${escapeHtml(item.title)}</div>
+                <div style="color:var(--text-dim);font-size:12.5px;">${escapeHtml(item.detail)}</div>
+              </div>
+            </div>
+          `).join('') : `<div class="empty-state"><span class="emoji">🏆</span>Seus destaques aparecem depois dos primeiros treinos.</div>`}
+        </div>
+      </section>
+
+      <section>
+        <div class="section-title">Nível</div>
+        <div class="card progress-level-card">
+          <div>
+            <span class="stat-label">Nível ${lvl.level}</span>
+            <strong>${state.xp||0} XP</strong>
+            <small>Faltam ${lvl.next-(state.xp||0)} XP para o nível ${lvl.level+1}</small>
+          </div>
+          <div class="progress-track"><div class="progress-fill" style="width:${lvl.pct}%;"></div></div>
+        </div>
+      </section>
+    </div>
 
     <div class="section-title">Missões da semana</div>
     <div style="margin-bottom:20px;">
