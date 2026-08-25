@@ -1149,3 +1149,21 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:20px 0;}
     grid-template-columns: 1fr;
   }
 }
+
+.exercise-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.exercise-open-hint {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.exercise-card:hover .exercise-open-hint {
+  color: var(--primary);
+}
