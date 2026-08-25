@@ -152,6 +152,7 @@ const EXERCISE_IMAGES = {
   ex_cadeira_extensora:'assets/exercises/ex_cadeira_extensora.png',
   ex_cadeira_flexora:'assets/exercises/ex_mesa_flexora.png',
   ex_coice_maquina:'assets/exercises/ex_kickback.png',
+  ex_crossover:'assets/exercises/ex_crossover.png',
   ex_crossover_alto:'assets/exercises/ex_crossover.png',
   ex_crossover_baixo:'assets/exercises/ex_crossover.png',
   ex_crucifixo:'assets/exercises/ex_crucifixo_maquina.png',
