@@ -828,14 +828,29 @@ body.light .mv-body{fill:#f7f7fc;stroke:#c8c8d4;}
 
 /* Full-screen workout runner */
 .runner{
-  position:fixed;inset:0;background:var(--bg);z-index:200;
-  display:flex;flex-direction:column;
-  transform:translateY(100%);transition:transform .4s var(--ease);
+  position:fixed;
+  inset:0;
+  z-index:100;
+  display:flex;
+  flex-direction:column;
+  transform:translateY(100%);
+  transition:transform .35s var(--ease);
+  background:
+    radial-gradient(circle at 12% 10%, rgba(51,85,255,0.16), transparent 28%),
+    radial-gradient(circle at 88% 18%, rgba(166,111,252,0.14), transparent 30%),
+    linear-gradient(180deg, #080910 0%, var(--bg) 48%, #0c0d14 100%);
 }
 .runner.open{transform:translateY(0);}
 .runner-header{
-  padding:calc(18px + env(safe-area-inset-top)) 20px 18px;display:flex;align-items:center;justify-content:space-between;
-  gap:12px;border-bottom:1px solid var(--border);
+  padding:calc(18px + env(safe-area-inset-top)) 20px 18px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  border-bottom:1px solid rgba(255,255,255,0.1);
+  background:rgba(18,20,32,0.62);
+  backdrop-filter:blur(16px) saturate(1.25);
+  -webkit-backdrop-filter:blur(16px) saturate(1.25);
 }
 .runner-header-mid{flex:1;min-width:0;text-align:center;}
 .runner-counter{font-weight:700;font-size:13px;color:var(--text-dim);}
@@ -851,6 +866,13 @@ body.light .mv-body{fill:#f7f7fc;stroke:#c8c8d4;}
 @keyframes exercisePulse{0%{transform:scale(1);}50%{transform:scale(1.03);}100%{transform:scale(1);}}
 .runner-title{font-size:22px;font-weight:800;text-align:center;}
 .runner-muscle{color:var(--text-dim);font-size:13px;margin-top:4px;text-align:center;}
+.runner-footer{
+  padding:16px 20px calc(16px + env(safe-area-inset-bottom));
+  border-top:1px solid rgba(255,255,255,0.1);
+  background:rgba(18,20,32,0.62);
+  backdrop-filter:blur(16px) saturate(1.25);
+  -webkit-backdrop-filter:blur(16px) saturate(1.25);
+}
 .previous-performance{
   width:100%;max-width:400px;margin-top:16px;padding:12px 14px;border:1px solid var(--border);
   border-radius:var(--radius-sm);background:var(--bg-card);display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
@@ -1530,4 +1552,17 @@ body.light .dash-section {
 
 body.light .dash-section summary:hover {
   background:rgba(51,85,255,0.045);
+}
+
+body.light .runner{
+  background:
+    radial-gradient(circle at 12% 10%, rgba(51,85,255,0.12), transparent 28%),
+    radial-gradient(circle at 88% 18%, rgba(166,111,252,0.1), transparent 30%),
+    linear-gradient(180deg, #f8f9ff 0%, var(--bg) 50%, #eef1ff 100%);
+}
+
+body.light .runner-header,
+body.light .runner-footer {
+  background:rgba(255,255,255,0.76);
+  border-color:rgba(20,24,40,0.08);
 }
