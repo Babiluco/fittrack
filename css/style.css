@@ -255,8 +255,9 @@ main.view-wrap{
    ========================================================================== */
 .grid{display:grid;gap:16px;}
 .grid-2{grid-template-columns:repeat(2,1fr);}
-.grid-3{grid-template-columns:repeat(3,1fr);}
-.grid-4{grid-template-columns:repeat(4,1fr);}
+.grid-2{grid-template-columns:repeat(2,minmax(0,1fr));}
+.grid-3{grid-template-columns:repeat(3,minmax(0,1fr));}
+.grid-4{grid-template-columns:repeat(4,minmax(0,1fr));}
 @media (max-width: 720px){
   .grid-2,.grid-3,.grid-4{grid-template-columns:repeat(2,1fr);}
 }
@@ -1565,4 +1566,56 @@ body.light .runner-header,
 body.light .runner-footer {
   background:rgba(255,255,255,0.76);
   border-color:rgba(20,24,40,0.08);
+}
+
+/* Fix overflow na página de progresso */
+.progress-kpi-grid,
+.progress-split,
+.grid,
+.card,
+.stat-card {
+  min-width: 0;
+}
+
+.stat-card {
+  overflow: hidden;
+}
+
+.stat-card .stat-label,
+.stat-card .stat-value,
+.stat-card .stat-sub {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.stat-card .stat-value {
+  font-size: clamp(18px, 4.8vw, 26px);
+  line-height: 1.08;
+}
+
+.progress-kpi-grid.grid-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 980px) {
+  .progress-kpi-grid.grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 430px) {
+  .progress-kpi-grid.grid-4 {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-card {
+    padding: 14px;
+  }
+}
+
+.progress-kpi-grid .card,
+.progress-split .card,
+.progress-overview.card {
+  border-radius: 14px;
 }
