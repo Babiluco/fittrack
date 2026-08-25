@@ -217,7 +217,7 @@ const EXERCISE_IMAGES = {
   ex_triceps_corda:'assets/exercises/ex_triceps_corda.png',
   ex_triceps_frances:'assets/exercises/ex_triceps_corda.png',
   ex_triceps_maquina:'assets/exercises/ex_triceps_corda.png',
-  ex_triceps_mergulho_banco:'assets/exercises/ex_flexao_bracos.png',
+  ex_triceps_mergulho_banco:'assets/exercises/ex_triceps_banco.png',
   ex_triceps_testa:'assets/exercises/ex_triceps_testa.png',
   ex_voador_cabo:'assets/exercises/ex_crossover.png',
 };
