@@ -57,7 +57,10 @@ body.light{
 html{-webkit-tap-highlight-color:transparent;}
 body{
   font-family:var(--font-body);
-  background:var(--bg);
+  background:
+    radial-gradient(circle at 12% 10%, rgba(51,85,255,0.16), transparent 28%),
+    radial-gradient(circle at 88% 18%, rgba(166,111,252,0.14), transparent 30%),
+    linear-gradient(180deg, #080910 0%, var(--bg) 48%, #0c0d14 100%);
   color:var(--text);
   min-height:100vh;
   transition:background .4s var(--ease),color .4s var(--ease);
@@ -1408,4 +1411,11 @@ body.light .field textarea:focus {
   background:rgba(255,255,255,0.96);
   border-color:rgba(51,85,255,0.6);
   box-shadow:0 0 0 3px rgba(51,85,255,0.12);
+}
+
+body.light {
+  background:
+    radial-gradient(circle at 12% 10%, rgba(51,85,255,0.12), transparent 28%),
+    radial-gradient(circle at 88% 18%, rgba(166,111,252,0.1), transparent 30%),
+    linear-gradient(180deg, #f8f9ff 0%, var(--bg) 50%, #eef1ff 100%);
 }
