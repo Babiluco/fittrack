@@ -1662,6 +1662,7 @@ body.light .runner-footer {background:rgba(255,255,255,0.76);border-color:rgba(2
 }
 /* ========================================================================== 
    Correção mobile: espaçamento, menu e overflow
+   Correção visual mobile: respiro, imagens e menu
    ========================================================================== */
 html,
 body {
@@ -1697,7 +1698,14 @@ main.view-wrap {
 
 .card,
 .dash-section,
+.dash-section {
+  overflow:visible;
+}
+
 .exercise-card {
+  width:100%;
+  padding:16px;
+  border-radius:22px;
   overflow:hidden;
 }
 
@@ -1718,6 +1726,7 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
 .field label {
   max-width:100%;
   overflow-wrap:anywhere;
+  overflow-wrap:break-word;
 }
 
 .field {
@@ -1729,6 +1738,7 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
   display:block;
   padding-left:2px;
   line-height:1.25;
+  line-height:1.3;
 }
 
 .field input,
@@ -1737,11 +1747,14 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
   width:100%;
   min-height:54px;
   box-sizing:border-box;
+  line-height:1.35;
 }
 
 .list-row {
   width:100%;
+  padding:16px;
   overflow:hidden;
+  overflow:visible;
 }
 
 .goal-row {
@@ -1752,6 +1765,12 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
   flex:0 0 24px;
 }
 
+.goal-row .list-row-body,
+.list-row-body {
+  flex:1 1 auto;
+  min-width:0;
+}
+
 .list-row .btn,
 .goal-row .btn,
 .goal-row button {
@@ -1759,39 +1778,100 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
 }
 
 .exercise-card {
+.exercise-thumb {
   width:100%;
+  max-width:100%;
+  aspect-ratio:16/9.5;
+  margin:0 0 16px;
+  padding:16px;
+  border-radius:20px;
+  background:#fff;
+  border:1px solid rgba(255,255,255,0.14);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
 }
 
 .exercise-thumb {
   max-width:100%;
+.exercise-thumb-large {
   aspect-ratio:16/9;
   border-radius:18px;
+  margin-bottom:16px;
 }
 
 .exercise-photo {
   width:100%;
   max-width:100%;
   height:clamp(150px, 42vw, 190px);
+  height:100%;
+  max-height:210px;
   object-fit:contain;
+  object-position:center;
+  display:block;
+  padding:0;
+  border:0;
+  border-radius:14px;
+  background:transparent;
+}
+
+.exercise-emoji {
+  width:100%;
+  height:100%;
+  min-height:170px;
+  display:grid;
+  place-items:center;
+  font-size:4rem;
+  border-radius:18px;
+}
+
+.visual-icon .exercise-photo {
+  object-fit:contain;
+  object-position:center;
+}
+
+.exercise-name {
+  display:block;
+  margin-top:0;
+  font-size:16px;
+  line-height:1.25;
+}
+
+.exercise-meta {
+  display:block;
+  margin-top:6px;
+  font-size:13px;
+  line-height:1.4;
+  color:var(--text-dim);
 }
 
 .exercise-card-footer {
   display:flex;
   align-items:center;
   gap:8px;
+  gap:10px;
   width:100%;
+  margin-top:14px;
 }
 
 .exercise-card-footer .muscle-tag {
   flex:0 1 auto;
+  margin-top:0;
 }
 
 .exercise-open-hint {
   margin-left:auto;
   max-width:52%;
+  color:var(--text-dim);
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
+}
+
+.exercise-fav-btn {
+  top:24px;
+  right:24px;
 }
 
 .overlay {
@@ -1806,6 +1886,7 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
   max-width:min(560px, calc(100vw - 20px));
   max-height:min(82vh, calc(100dvh - 90px));
   padding:22px 18px calc(24px + env(safe-area-inset-bottom));
+  padding:24px 18px calc(24px + env(safe-area-inset-bottom));
   border-radius:22px;
   overflow-x:hidden;
 }
@@ -1817,19 +1898,26 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
 
 .exercise-detail-header h2 {
   padding-right:42px;
+  padding-right:46px;
   font-size:clamp(22px, 7vw, 32px);
   line-height:1.08;
+  line-height:1.12;
 }
 
 .exercise-detail-media {
   width:100%;
   min-height:auto;
   aspect-ratio:16/10;
+  padding:16px;
+  border-radius:20px;
+  background:#fff;
 }
 
 .exercise-detail-media .exercise-photo {
   height:100%;
   max-height:260px;
+  object-fit:contain;
+  object-position:center;
 }
 
 .exercise-detail-stats {
@@ -1871,6 +1959,7 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
     padding-left:16px;
     padding-right:16px;
     padding-bottom:calc(168px + env(safe-area-inset-bottom));
+    padding-bottom:calc(170px + env(safe-area-inset-bottom));
   }
 
   .hero-card,
@@ -1881,9 +1970,16 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
     border-radius:18px;
   }
 
+  .card:not(.exercise-card),
+  .dash-section {
+    padding-left:18px;
+    padding-right:18px;
+  }
+
   .section-title {
     font-size:20px;
     line-height:1.18;
+    line-height:1.2;
   }
 
   .tabs {
@@ -1898,6 +1994,7 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
   .list-row {
     gap:12px;
     padding:14px;
+    padding:16px;
   }
 
   .goal-row {
@@ -1916,12 +2013,35 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
     flex:0 0 48px;
   }
 
+  .exercise-card {
+    padding:14px;
+    border-radius:20px;
+  }
+
   .exercise-thumb {
     aspect-ratio:16/8.8;
+    aspect-ratio:16/9;
+    padding:14px;
+    margin-bottom:14px;
+    border-radius:18px;
   }
 
   .exercise-photo {
     height:clamp(150px, 48vw, 180px);
+    max-height:190px;
+  }
+
+  .exercise-name {
+    font-size:15.5px;
+  }
+
+  .exercise-meta {
+    font-size:12.5px;
+  }
+
+  .exercise-fav-btn {
+    top:22px;
+    right:22px;
   }
 
   .exercise-detail-header h2 {
@@ -1952,5 +2072,13 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
 
   .mobile-nav .nav-item {
     font-size:10px;
+  }
+
+  .exercise-card {
+    padding:12px;
+  }
+
+  .exercise-thumb {
+    padding:12px;
   }
 }
