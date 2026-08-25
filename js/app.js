@@ -3334,11 +3334,18 @@ function renderExercises(){
 
 function renderExGrid(){
   const grid = document.getElementById('exGrid');
-  const filtered = allExercises()
-    .filter(e=>
-      (exerciseFilter==='todos'||(exerciseFilter==='favoritos' ? isFavoriteExercise(e.id) : e.muscle===exerciseFilter)) &&
-      e.name.toLowerCase().includes(exerciseSearch.toLowerCase())
-    )
+  const query = exerciseSearch.trim().toLowerCase();
+
+const filtered = allExercises()
+  .filter(e=>{
+    const label = MUSCLE_LABELS[e.muscle] || e.muscle || '';
+    const haystack = `${e.name} ${e.desc || ''} ${label}`.toLowerCase();
+
+    return (
+      (exerciseFilter === 'todos' || (exerciseFilter === 'favoritos' ? isFavoriteExercise(e.id) : e.muscle === exerciseFilter)) &&
+      (!query || haystack.includes(query))
+    );
+  })
     .sort((a,b)=>{
       const favDiff = Number(isFavoriteExercise(b.id))-Number(isFavoriteExercise(a.id));
       return favDiff || a.name.localeCompare(b.name);
