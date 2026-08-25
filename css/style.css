@@ -214,15 +214,31 @@ main.view-wrap{
 /* ==========================================================================
    Header / greeting
    ========================================================================== */
-.view-header{
-  display:flex;justify-content:space-between;align-items:flex-start;
-  margin-bottom:26px;flex-wrap:wrap;gap:12px;
-}
-.greeting h1{font-size:26px;font-weight:800;}
-.greeting p{color:var(--text-dim);font-size:14px;margin-top:4px;}
-.header-actions{display:flex;gap:10px;align-items:center;}
 .icon-btn{
-  width:48px;height:48px;border-radius:50%;background:var(--bg-card);
+  width:48px;
+  height:48px;
+  border-radius:50%;
+  background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.1);
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  position:relative;
+  transition:transform .15s var(--ease),background .25s var(--ease),border-color .25s var(--ease),box-shadow .25s var(--ease);
+  backdrop-filter:blur(10px) saturate(1.2);
+  -webkit-backdrop-filter:blur(10px) saturate(1.2);
+}
+
+.icon-btn:hover{
+  background:rgba(255,255,255,0.1);
+  border-color:rgba(255,255,255,0.18);
+  box-shadow:0 10px 24px rgba(0,0,0,0.18);
+}
+
+.icon-btn:active{
+  transform:scale(.94);
+}
   border:1px solid var(--border);display:flex;align-items:center;justify-content:center;
   font-size:17px;transition:transform .15s var(--ease),background .2s;
   position:relative;
@@ -1418,4 +1434,15 @@ body.light {
     radial-gradient(circle at 12% 10%, rgba(51,85,255,0.12), transparent 28%),
     radial-gradient(circle at 88% 18%, rgba(166,111,252,0.1), transparent 30%),
     linear-gradient(180deg, #f8f9ff 0%, var(--bg) 50%, #eef1ff 100%);
+}
+
+body.light .icon-btn {
+  background:rgba(255,255,255,0.78);
+  border-color:rgba(20,24,40,0.09);
+  box-shadow:0 8px 22px rgba(30,35,60,0.08);
+}
+
+body.light .icon-btn:hover {
+  background:rgba(255,255,255,0.94);
+  border-color:rgba(51,85,255,0.22);
 }
