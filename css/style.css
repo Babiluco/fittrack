@@ -1215,3 +1215,23 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:20px 0;}
 .exercise-card:hover .exercise-fav-btn {
   color: #facc15;
 }
+
+.exercise-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 345px;
+}
+
+.exercise-card .exercise-name {
+  min-height: 38px;
+  line-height: 1.25;
+}
+
+.exercise-card .exercise-meta {
+  min-height: 34px;
+  line-height: 1.35;
+}
+
+.exercise-card-footer {
+  margin-top: auto;
+}
