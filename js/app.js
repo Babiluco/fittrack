@@ -3350,7 +3350,27 @@ const filtered = allExercises()
       const favDiff = Number(isFavoriteExercise(b.id))-Number(isFavoriteExercise(a.id));
       return favDiff || a.name.localeCompare(b.name);
     });
-  if(filtered.length===0){ grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><span class="emoji">🔍</span>Nenhum exercício encontrado.</div>`; return; }
+if(filtered.length===0){
+  grid.innerHTML = `
+    <div class="empty-state" style="grid-column:1/-1;">
+      <span class="emoji">🔍</span>
+      <b>Nenhum exercício encontrado</b>
+      <small>Tente buscar por nome, grupo muscular ou tipo de movimento.</small>
+      <button class="btn btn-ghost btn-sm" id="clearExerciseSearch" style="margin-top:12px;">Limpar busca</button>
+    </div>
+  `;
+
+  const clearBtn = document.getElementById('clearExerciseSearch');
+  if(clearBtn){
+    clearBtn.addEventListener('click', ()=>{
+      exerciseSearch = '';
+      exerciseFilter = 'todos';
+      renderExercises();
+    });
+  }
+
+  return;
+}
   grid.innerHTML = filtered.map(e=>`
     <div class="card exercise-card interactive" data-ex="${e.id}">
       <div class="exercise-thumb">${exerciseMedia(e, {size:'card'})}</div>
