@@ -220,6 +220,20 @@ const EXERCISE_IMAGES = {
   ex_triceps_mergulho_banco:'assets/exercises/ex_triceps_banco.png',
   ex_triceps_testa:'assets/exercises/ex_triceps_testa.png',
   ex_voador_cabo:'assets/exercises/ex_crossover.png',
+  ex_glute_drive_maquina:'assets/exercises/ex_hip_thrust.png',
+  ex_passada_reversa_smith:'assets/exercises/ex_afundo.png',
+  ex_extensao_45_gluteos:'assets/exercises/ex_bom_dia.png',
+  ex_puxada_unilateral_cabo:'assets/exercises/ex_puxada.png',
+  ex_remada_articulada_aberta:'assets/exercises/ex_remada_maquina.png',
+  ex_rosca_bayesian_cabo:'assets/exercises/ex_rosca_direta.png',
+  ex_supino_inclinado_smith:'assets/exercises/ex_supino_inclinado.png',
+  ex_crucifixo_cabo:'assets/exercises/ex_crossover.png',
+  ex_elevacao_lateral_maquina:'assets/exercises/ex_elevacao_lateral.png',
+  ex_triceps_frances_cabo:'assets/exercises/ex_triceps_corda.png',
+  ex_triceps_unilateral_cabo:'assets/exercises/ex_triceps_corda.png',
+  ex_agachamento_sumo_smith:'assets/exercises/ex_agachamento_sumo.png',
+  ex_remada_baixa_aberta:'assets/exercises/ex_remada_baixa.png',
+  ex_rosca_martelo_corda:'assets/exercises/ex_rosca_martelo.png',
 };
 
 const EXERCISE_EMOJIS = {
