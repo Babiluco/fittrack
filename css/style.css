@@ -1177,3 +1177,9 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:20px 0;}
 .exercise-filter-tools > .chip {
   width: fit-content;
 }
+
+.exercise-result-count {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: -4px 0 12px;
+}
