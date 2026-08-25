@@ -1183,3 +1183,35 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:20px 0;}
   font-size: 12px;
   margin: -4px 0 12px;
 }
+
+.exercise-fav-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 12, 20, 0.72);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 19px;
+  line-height: 1;
+  backdrop-filter: blur(8px);
+  z-index: 2;
+}
+
+.exercise-fav-btn.active {
+  color: #facc15;
+  background: rgba(250, 204, 21, 0.14);
+  border-color: rgba(250, 204, 21, 0.35);
+}
+
+.exercise-card {
+  position: relative;
+}
+
+.exercise-card:hover .exercise-fav-btn {
+  color: #facc15;
+}
