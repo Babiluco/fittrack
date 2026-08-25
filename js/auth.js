@@ -159,10 +159,6 @@ const AUTH = (function(){
     return authListener;
   }
 
-  async function getCurrentUser(){
-    const session = currentSession || await getSession();
-    return session?.user || null;
-  }
 
   return {
     signUp,
