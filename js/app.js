@@ -3320,9 +3320,12 @@ function renderExercises(){
   const wrap = document.getElementById('treinoTabContent');
   wrap.innerHTML = `
     <div class="field"><input type="text" id="exSearch" placeholder="🔍 Pesquisar exercícios..." value="${escapeHtml(exerciseSearch)}"></div>
-    <div class="chip-row" id="exFilters" style="margin-bottom:18px;">
-      ${MUSCLE_FILTERS.map(m=>`<button class="chip ${exerciseFilter===m?'active':''}" data-filter="${m}">${MUSCLE_LABELS[m]}</button>`).join('')}
-    </div>
+    <div class="exercise-filter-tools">
+  <button class="chip ${exerciseFilter==='favoritos'?'active':''}" data-filter="favoritos">Favoritos</button>
+  <div class="chip-row" id="exFilters">
+    ${MUSCLE_FILTERS.filter(m=>m!=='favoritos').map(m=>`<button class="chip ${exerciseFilter===m?'active':''}" data-filter="${m}">${MUSCLE_LABELS[m]}</button>`).join('')}
+  </div>
+</div>
     <div class="grid grid-3" id="exGrid"></div>
   `;
   document.getElementById('exSearch').addEventListener('input', (e)=>{ exerciseSearch=e.target.value; renderExGrid(); });
