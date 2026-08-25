@@ -3347,10 +3347,13 @@ function renderExGrid(){
   grid.innerHTML = filtered.map(e=>`
     <div class="card exercise-card interactive" data-ex="${e.id}">
       <div class="exercise-thumb">${exerciseMedia(e, {size:'card'})}</div>
-      <div class="exercise-name">${e.name}</div>
-      <div class="exercise-meta">${e.desc.slice(0,46)}${e.desc.length>46?'…':''}</div>
-      <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
-      <button class="btn btn-ghost btn-sm" data-fav-ex="${e.id}" style="margin-top:10px;">${isFavoriteExercise(e.id)?'Salvo':'Favoritar'}</button>
+     <div class="exercise-name">${e.name}</div>
+<div class="exercise-meta">${e.desc.slice(0,58)}${e.desc.length>58?'…':''}</div>
+<div class="exercise-card-footer">
+  <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
+  <span class="exercise-open-hint">Ver detalhes</span>
+</div>
+<button class="btn btn-ghost btn-sm" data-fav-ex="${e.id}" style="margin-top:10px;">${isFavoriteExercise(e.id)?'Salvo':'Favoritar'}</button>
     </div>`).join('');
   grid.querySelectorAll('[data-ex]').forEach(card=>{
     card.addEventListener('click', ()=>openExerciseModal(card.dataset.ex));
