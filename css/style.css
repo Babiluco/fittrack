@@ -283,8 +283,41 @@ main.view-wrap{
 
 /* Hero card — dominant "what should I do now" CTA on the Home screen */
 .hero-card{
-  position:relative;overflow:hidden;padding:26px;margin-bottom:20px;
-  background:var(--bg-card);
+  position:relative;
+  overflow:hidden;
+  padding:26px;
+  margin-bottom:20px;
+  background:
+    linear-gradient(135deg, rgba(51,85,255,0.18), rgba(166,111,252,0.12)),
+    rgba(255,255,255,0.055);
+  border-color:rgba(255,255,255,0.12);
+}
+.hero-card::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255,255,255,0.16), transparent 24%),
+    linear-gradient(180deg, rgba(255,255,255,0.08), transparent 45%);
+}
+
+.hero-card > *{
+  position:relative;
+  z-index:1;
+}
+
+body.light .hero-card{
+  background:
+    linear-gradient(135deg, rgba(51,85,255,0.13), rgba(166,111,252,0.1)),
+    rgba(255,255,255,0.82);
+  border-color:rgba(51,85,255,0.13);
+}
+
+body.light .hero-card::before{
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255,255,255,0.72), transparent 24%),
+    linear-gradient(180deg, rgba(255,255,255,0.45), transparent 45%);
 }
 .hero-eyebrow{
   font-size:11.5px;font-weight:700;color:var(--purple);text-transform:uppercase;
