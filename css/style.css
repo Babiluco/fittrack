@@ -205,7 +205,8 @@ main.view-wrap{
 @media (max-width: 880px){
   .sidebar{display:none;}
   .mobile-nav{display:flex;}
- main.view-wrap{padding:calc(22px + env(safe-area-inset-top)) 18px 112px;max-width:100%;}
+  main.view-wrap{padding:calc(22px + env(safe-area-inset-top)) 18px 112px;max-width:100%;}
+}
 
 /* ==========================================================================
    Header / greeting
