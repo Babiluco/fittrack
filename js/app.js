@@ -3326,7 +3326,8 @@ function renderExercises(){
     ${MUSCLE_FILTERS.filter(m=>m!=='favoritos').map(m=>`<button class="chip ${exerciseFilter===m?'active':''}" data-filter="${m}">${MUSCLE_LABELS[m]}</button>`).join('')}
   </div>
 </div>
-    <div class="grid grid-3" id="exGrid"></div>
+    <div class="exercise-result-count" id="exerciseResultCount"></div>
+<div class="grid grid-3" id="exGrid"></div>
   `;
   document.getElementById('exSearch').addEventListener('input', (e)=>{ exerciseSearch=e.target.value; renderExGrid(); });
   document.querySelectorAll('[data-filter]').forEach(btn=>{
@@ -3353,6 +3354,11 @@ const filtered = allExercises()
       const favDiff = Number(isFavoriteExercise(b.id))-Number(isFavoriteExercise(a.id));
       return favDiff || a.name.localeCompare(b.name);
     });
+   const counter = document.getElementById('exerciseResultCount');
+if(counter){
+  counter.textContent = `${filtered.length} exercício${filtered.length===1?'':'s'} encontrado${filtered.length===1?'':'s'}`;
+}
+   
 if(filtered.length===0){
   grid.innerHTML = `
     <div class="empty-state" style="grid-column:1/-1;">
