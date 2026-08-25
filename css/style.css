@@ -246,11 +246,13 @@ main.view-wrap{
 }
 
 .card{
-  background:var(--bg-card);
-  border:1px solid var(--border);
+  background:rgba(255,255,255,0.045);
+  border:1px solid rgba(255,255,255,0.08);
   border-radius:var(--radius);
-  padding:18px;
   box-shadow:var(--shadow-sm);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+}
   transition:transform .25s var(--ease),box-shadow .25s var(--ease),background .3s var(--ease),border-color .3s;
 }
 .card.interactive:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:var(--accent);}
@@ -1297,4 +1299,9 @@ body.light .sidebar {
   background:rgba(255,255,255,0.72);
   border-right-color:rgba(20,24,40,0.1);
   box-shadow:18px 0 45px rgba(30,35,60,0.1);
+}
+
+body.light .card {
+  background:rgba(255,255,255,0.78);
+  border-color:rgba(20,24,40,0.08);
 }
