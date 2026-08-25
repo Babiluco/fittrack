@@ -3365,36 +3365,67 @@ function renderExGrid(){
 }
 
 function openExerciseModal(exId){
-  const e = findExercise(exId) || {id:exId, name:'Exercício removido', muscle:'todos', desc:'Este exercício apareceu em treinos antigos, mas não está mais na biblioteca.', execution:'Sem instruções salvas para este exercício.', mistakes:'Sem observações salvas para este exercício.'};
+  const e = findExercise(exId) || {
+    id:exId,
+    name:'Exercício removido',
+    muscle:'todos',
+    desc:'Este exercício apareceu em treinos antigos, mas não está mais na biblioteca.',
+    execution:'Sem instruções salvas para este exercício.',
+    mistakes:'Sem observações salvas para este exercício.'
+  };
+
   const stats = WorkoutProgression.getExerciseStats(state, exId);
   const favorite = isFavoriteExercise(exId);
+
   openModal(`
-    <div class="exercise-thumb exercise-thumb-large">${exerciseMedia(e, {size:'large'})}</div>
-    <h2 style="margin:14px 0 4px;">${e.name}</h2>
-    <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
-    <p style="margin-top:14px;font-size:13.5px;color:var(--text-dim);line-height:1.6;">${e.desc}</p>
-    <hr class="sep">
-    <h4 style="font-size:13px;margin-bottom:6px;">✅ Execução correta</h4>
-    <p style="font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:14px;">${e.execution}</p>
-    <h4 style="font-size:13px;margin-bottom:6px;">⚠️ Dicas e cuidados</h4>
-    <p style="font-size:13px;color:var(--text-dim);line-height:1.6;">${e.mistakes}</p>
-    <hr class="sep">
-    <div class="mini-preview-row">
-      <div class="list-row-icon">📈</div>
-      <div>
-        <div class="list-row-title">${stats.sessionsCount ? `${stats.sessionsCount} sessões registradas` : 'Primeira vez'}</div>
-        <div class="list-row-sub">${stats.lastPerformed ? `Último treino em ${fmtDate(stats.lastPerformed)}` : 'Sem histórico para este exercício.'}</div>
+    <div class="exercise-detail">
+      <div class="exercise-detail-media">
+        ${exerciseMedia(e, {size:'large'})}
       </div>
+
+      <div class="exercise-detail-header">
+        <div>
+          <h2>${escapeHtml(e.name)}</h2>
+          <span class="muscle-tag">${MUSCLE_LABELS[e.muscle] || e.muscle || 'Exercício'}</span>
+        </div>
+      </div>
+
+      <p class="exercise-detail-desc">${escapeHtml(e.desc || 'Sem descrição cadastrada.')}</p>
+
+      <div class="exercise-detail-section">
+        <h4>Execução correta</h4>
+        <p>${escapeHtml(e.execution || 'Sem instruções salvas para este exercício.')}</p>
+      </div>
+
+      <div class="exercise-detail-section">
+        <h4>Dicas e cuidados</h4>
+        <p>${escapeHtml(e.mistakes || 'Sem observações salvas para este exercício.')}</p>
+      </div>
+
+      <div class="exercise-detail-stats">
+        <div>
+          <span>Sessões</span>
+          <b>${stats.sessionsCount || 0}</b>
+        </div>
+        <div>
+          <span>Último treino</span>
+          <b>${stats.lastPerformed ? fmtDate(stats.lastPerformed) : 'Primeira vez'}</b>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-block" id="viewAnalyticsBtn">Ver evolução</button>
+      <button class="btn btn-ghost btn-block" id="favoriteExerciseBtn">${favorite ? 'Remover dos favoritos' : 'Favoritar exercício'}</button>
     </div>
-    <button class="btn btn-primary btn-block" id="viewAnalyticsBtn" style="margin-top:16px;">Ver evolução</button>
-    <button class="btn btn-ghost btn-block" id="favoriteExerciseBtn" style="margin-top:10px;">${favorite?'Remover dos favoritos':'Favoritar exercício'}</button>
   `);
+
   const analyticsBtn = document.getElementById('viewAnalyticsBtn');
   if(analyticsBtn) analyticsBtn.addEventListener('click', ()=>openExerciseAnalytics(exId));
+
   const favoriteBtn = document.getElementById('favoriteExerciseBtn');
   if(favoriteBtn) favoriteBtn.addEventListener('click', ()=>{
     toggleFavoriteExercise(exId);
     openExerciseModal(exId);
+    renderExGrid();
   });
 }
 
