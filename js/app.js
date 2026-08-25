@@ -3389,7 +3389,9 @@ if(filtered.length===0){
   <span class="muscle-tag">${MUSCLE_LABELS[e.muscle]}</span>
   <span class="exercise-open-hint">Ver detalhes</span>
 </div>
-<button class="btn btn-ghost btn-sm" data-fav-ex="${e.id}" style="margin-top:10px;">${isFavoriteExercise(e.id)?'Salvo':'Favoritar'}</button>
+<button class="exercise-fav-btn ${isFavoriteExercise(e.id)?'active':''}" data-fav-ex="${e.id}" aria-label="${isFavoriteExercise(e.id)?'Remover dos favoritos':'Favoritar exercício'}">
+  ${isFavoriteExercise(e.id)?'★':'☆'}
+</button>
     </div>`).join('');
   grid.querySelectorAll('[data-ex]').forEach(card=>{
     card.addEventListener('click', ()=>openExerciseModal(card.dataset.ex));
