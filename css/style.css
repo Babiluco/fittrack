@@ -1167,3 +1167,13 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:20px 0;}
 .exercise-card:hover .exercise-open-hint {
   color: var(--primary);
 }
+
+.exercise-filter-tools {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.exercise-filter-tools > .chip {
+  width: fit-content;
+}
