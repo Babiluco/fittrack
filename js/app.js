@@ -654,13 +654,17 @@ async function submitNewPassword(){
    RECUPERAÇÃO DE TREINO EM ANDAMENTO
    ====================================================================== */
 function checkForRecoverableSession(){
-  const s = state.activeWorkoutSession;
-  if(!isValidActiveSession(s)) return;
+  const rawSession = state.activeWorkoutSession;
+  if(!isValidActiveSession(rawSession)) return;
+  const s = normalizeActiveSession(rawSession);
+  state.activeWorkoutSession = s;
+  persist();
   const tpl = getTemplate(s.templateId);
   const doneSets = s.sets.reduce((a,ex)=>a+ex.filter(x=>x.done).length,0);
   const totalSets = s.sets.reduce((a,ex)=>a+ex.length,0);
   const startedDate = new Date(s.startedAt);
-  openModal(`
+ 
+   openModal(`
     <h2 style="margin-bottom:6px;">Você tem um treino em andamento</h2>
     <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">${tpl.name} · iniciado ${fmtDate(todayKey(startedDate))} às ${String(startedDate.getHours()).padStart(2,'0')}:${String(startedDate.getMinutes()).padStart(2,'0')}</p>
     <div class="progress-track" style="margin-bottom:8px;"><div class="progress-fill" style="width:${totalSets?Math.round(doneSets/totalSets*100):0}%;"></div></div>
