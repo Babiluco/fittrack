@@ -2789,12 +2789,13 @@ function renderRunnerExercise(){
     </div>
   `;
 
-  document.getElementById('runnerClose').addEventListener('click', ()=>{
-    if(confirm('Sair do treino? Seu progresso nesta sessão será perdido.')){
-      discardActiveSession();
-      closeRunner();
-    }
-  });
+document.getElementById('runnerClose').addEventListener('click', ()=>{
+  if(confirm('Pausar treino e continuar depois? Seu progresso desta sessão ficará salvo.')){
+    persistRunnerSession();
+    closeRunner();
+    showToast('Treino pausado', 'Você pode continuar de onde parou.', '⏸️');
+  }
+});
   document.getElementById('runnerRestBtn').addEventListener('click', ()=>openRestTimerPicker(exDef.rest||60));
   document.getElementById('showInfoBtn').addEventListener('click', ()=>openExerciseModal(e.id));
   document.getElementById('replaceExerciseBtn').addEventListener('click', openExerciseReplacementModal);
