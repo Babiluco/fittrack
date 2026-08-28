@@ -2866,3 +2866,231 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
   }
 }
 
+/* Ajuste final da pagina Progresso: cards, numeros e graficos responsivos */
+#progressoTabContent,
+#progressoTabContent * {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+#progressoTabContent {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+#progressoTabContent .card {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.progress-toolbar {
+  width: 100%;
+}
+
+.progress-toolbar .btn {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.progress-overview.card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 20px;
+  border-radius: 20px;
+}
+
+.progress-overview-copy {
+  min-width: 0;
+}
+
+.progress-overview h2,
+.progress-overview p {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.progress-ring-large {
+  width: 104px;
+  height: 104px;
+  flex: 0 0 104px;
+}
+
+.progress-ring-large span {
+  max-width: 76px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.progress-kpi-grid.grid-4,
+#progressoTabContent > .grid.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+#progressoTabContent .stat-card {
+  min-width: 0;
+  padding: 16px;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+#progressoTabContent .stat-card .stat-label,
+#progressoTabContent .stat-card .stat-value,
+#progressoTabContent .stat-card .stat-sub {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+#progressoTabContent .stat-card .stat-value {
+  font-size: clamp(18px, 4vw, 25px);
+  line-height: 1.12;
+}
+
+.progress-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(220px, 0.75fr);
+  gap: 16px;
+  width: 100%;
+}
+
+.progress-highlight-list,
+.progress-highlight-list .mini-preview-row {
+  min-width: 0;
+}
+
+.progress-highlight-list .mini-preview-row {
+  align-items: flex-start;
+  overflow: hidden;
+}
+
+.progress-highlight-list .mini-preview-row > div:last-child {
+  min-width: 0;
+}
+
+.progress-level-card {
+  padding: 18px;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.progress-level-card strong,
+.progress-level-card small {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.mission-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.mission-card .list-row-title {
+  max-width: 100%;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.mission-card .chip,
+.mission-card .btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+#chartWorkoutsWeek,
+#chartWeight {
+  width: 100%;
+  min-height: 190px;
+  padding: 16px;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.line-chart-wrap,
+.line-chart-wrap svg,
+.bar-chart {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.line-chart-labels {
+  min-width: 0;
+  gap: 8px;
+}
+
+.line-chart-labels span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1080px) {
+  .progress-kpi-grid.grid-4,
+  #progressoTabContent > .grid.grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .progress-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .progress-overview.card {
+    grid-template-columns: 1fr;
+    align-items: start;
+    padding: 18px;
+  }
+
+  .progress-ring-large {
+    justify-self: start;
+    width: 96px;
+    height: 96px;
+    flex-basis: 96px;
+  }
+
+  .mission-card {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .mission-card .chip,
+  .mission-card .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 430px) {
+  .progress-kpi-grid.grid-4,
+  #progressoTabContent > .grid.grid-4 {
+    grid-template-columns: 1fr;
+  }
+
+  #progressoTabContent .stat-card,
+  .progress-level-card,
+  .mission-card,
+  #chartWorkoutsWeek,
+  #chartWeight {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  #progressoTabContent .stat-card .stat-value {
+    font-size: 22px;
+  }
+}
+
