@@ -1249,9 +1249,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:20px 0;}
 
 .exercise-detail {
   display: grid;
-  gap: 16px;
-  width: 100%;
-  max-width: 100%;
+  gap: 14px;
 }
 
 .exercise-detail-media {
@@ -1356,6 +1354,11 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:20px 0;}
 
   .exercise-detail-media .exercise-photo {
     max-height: 260px;
+  }
+
+  .exercise-detail-section {
+    padding: 13px;
+    border-radius: 14px;
   }
 
   .exercise-detail-stats {
@@ -1903,6 +1906,7 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
 .exercise-detail {
   width:100%;
   max-width:100%;
+  gap:16px;
 }
 
 .exercise-detail-header h2 {
@@ -2306,7 +2310,6 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
     grid-template-columns:1fr;
   }
 }
-
 /* Ajuste final dos cards de exercícios: imagens centralizadas e texto protegido */
 .exercise-card.card {
   position: relative;
@@ -3093,4 +3096,3 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
     font-size: 22px;
   }
 }
-
