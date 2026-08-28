@@ -2478,3 +2478,159 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
     font-size: 12.5px;
   }
 }
+
+/* Ajuste final do modal de detalhes do exercício */
+.modal .exercise-detail {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.modal .exercise-detail-media {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  min-height: 220px;
+  max-height: 340px;
+  padding: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  background: #fff;
+  border: 1px solid rgba(255,255,255,0.16);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
+  overflow: hidden;
+}
+
+.modal .exercise-detail-media .exercise-photo {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+}
+
+.modal .exercise-detail-media .exercise-emoji {
+  width: 100%;
+  height: 100%;
+  min-height: 170px;
+  display: grid;
+  place-items: center;
+  font-size: clamp(3.5rem, 16vw, 5.2rem);
+  line-height: 1;
+  background: transparent;
+  border: 0;
+}
+
+.modal .exercise-detail-header {
+  min-width: 0;
+}
+
+.modal .exercise-detail-header h2 {
+  max-width: 100%;
+  margin: 0 0 10px;
+  padding-right: 46px;
+  font-size: clamp(22px, 6vw, 30px);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.modal .exercise-detail-section {
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.05);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  overflow: hidden;
+}
+
+.modal .exercise-detail-section h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.modal .exercise-detail-section p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13.5px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.modal .exercise-detail-section.similar {
+  border-color: rgba(51,85,255,0.32);
+  background: rgba(51,85,255,0.09);
+}
+
+.modal .exercise-detail-section.similar h4 {
+  color: var(--accent-text);
+}
+
+.modal .exercise-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.modal .exercise-detail-stats div {
+  min-width: 0;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.045);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.modal .exercise-detail-stats span,
+.modal .exercise-detail-stats b {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 520px) {
+  .modal .exercise-detail {
+    gap: 14px;
+  }
+
+  .modal .exercise-detail-media {
+    aspect-ratio: 16 / 10.5;
+    min-height: 190px;
+    max-height: 280px;
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .modal .exercise-detail-section {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .modal .exercise-detail-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 380px) {
+  .modal .exercise-detail-media {
+    min-height: 170px;
+    padding: 14px;
+  }
+
+  .modal .exercise-detail-header h2 {
+    font-size: 22px;
+  }
+
+  .modal .exercise-detail-section p {
+    font-size: 13px;
+  }
+}
