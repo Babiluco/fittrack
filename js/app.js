@@ -3454,18 +3454,21 @@ if(filtered.length===0){
   });
 }
 
-function openExerciseModal(exId){
-  const e = findExercise(exId) || {
-    id:exId,
-    name:'Exercício removido',
-    muscle:'todos',
-    desc:'Este exercício apareceu em treinos antigos, mas não está mais na biblioteca.',
-    execution:'Sem instruções salvas para este exercício.',
-    mistakes:'Sem observações salvas para este exercício.'
-  };
+function splitExerciseDescription(desc){
+  const text = String(desc || '').trim();
+  const match = text.match(/\bSimilar sem\s+([^:]+):\s*(.+)$/i);
+  if(!match) return {description:text, similarTitle:'Exercícios similares', similarText:''};
+  const description = text.slice(0, match.index).trim();
+  const context = match[1].trim();
+  const similarTitle = context ? `Exercícios similares sem ${context}` : 'Exercícios similares';
+  return {description, similarTitle, similarText:match[2].trim()};
+}
 
   const stats = WorkoutProgression.getExerciseStats(state, exId);
   const favorite = isFavoriteExercise(exId);
+  const detailText = splitExerciseDescription(e.desc);
+
+openModal(`
 
   openModal(`
     <div class="exercise-detail">
@@ -3480,17 +3483,27 @@ function openExerciseModal(exId){
         </div>
       </div>
 
-      <p class="exercise-detail-desc">${escapeHtml(e.desc || 'Sem descrição cadastrada.')}</p>
+      <div class="exercise-detail-section intro">
+  <h4>Descrição</h4>
+  <p>${escapeHtml(detailText.description || 'Sem descrição cadastrada.')}</p>
+</div>
 
-      <div class="exercise-detail-section">
-        <h4>Execução correta</h4>
-        <p>${escapeHtml(e.execution || 'Sem instruções salvas para este exercício.')}</p>
-      </div>
+<div class="exercise-detail-section execution">
+  <h4>Execução correta</h4>
+  <p>${escapeHtml(e.execution || 'Sem instruções salvas para este exercício.')}</p>
+</div>
 
-      <div class="exercise-detail-section">
-        <h4>Dicas e cuidados</h4>
-        <p>${escapeHtml(e.mistakes || 'Sem observações salvas para este exercício.')}</p>
-      </div>
+<div class="exercise-detail-section care">
+  <h4>Dicas e cuidados</h4>
+  <p>${escapeHtml(e.mistakes || 'Sem observações salvas para este exercício.')}</p>
+</div>
+
+${detailText.similarText ? `
+  <div class="exercise-detail-section similar">
+    <h4>${escapeHtml(detailText.similarTitle)}</h4>
+    <p>${escapeHtml(detailText.similarText)}</p>
+  </div>
+` : ''}
 
       <div class="exercise-detail-stats">
         <div>
