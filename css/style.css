@@ -2634,3 +2634,235 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
     font-size: 13px;
   }
 }
+
+/* Ajuste final da tela Editar treino: miniaturas e formularios sem colisao */
+#editorExerciseList {
+  gap: 14px;
+}
+
+#editorExerciseList .draggable-row {
+  display: grid;
+  grid-template-columns: 28px 68px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  width: 100%;
+  padding: 16px;
+  border-radius: 18px;
+  overflow: visible;
+}
+
+#editorExerciseList .drag-handle {
+  width: 28px;
+  height: 68px;
+  display: grid;
+  place-items: center;
+  align-self: start;
+  color: var(--text-faint);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+  flex: 0 0 28px;
+}
+
+#editorExerciseList .list-row-icon.visual-icon {
+  width: 68px;
+  height: 68px;
+  flex: 0 0 68px;
+  padding: 8px;
+  align-self: start;
+  border-radius: 16px;
+  background: #fff;
+  overflow: hidden;
+}
+
+#editorExerciseList .list-row-icon.visual-icon .exercise-photo {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+
+#editorExerciseList .list-row-icon.visual-icon .exercise-emoji {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+}
+
+#editorExerciseList .list-row-body {
+  min-width: 0;
+  width: 100%;
+  display: grid;
+  gap: 12px;
+}
+
+#editorExerciseList .list-row-title {
+  min-width: 0;
+  padding-right: 8px;
+  font-size: 14.5px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+#editorExerciseList .list-row-body > div:first-child {
+  min-width: 0;
+  min-height: 40px;
+}
+
+#editorExerciseList .icon-btn[data-remove-idx] {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  align-self: start;
+}
+
+#editorExerciseList .field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  margin-top: 0 !important;
+}
+
+#editorExerciseList .field {
+  min-width: 0;
+  gap: 7px;
+  margin-bottom: 0 !important;
+}
+
+#editorExerciseList .field label {
+  min-height: 16px;
+  padding-left: 2px;
+  font-size: 11.5px;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+#editorExerciseList .field input,
+#editorExerciseList .field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 12px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.25;
+  box-sizing: border-box;
+}
+
+#addExerciseResults .list-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+}
+
+#addExerciseResults .list-row-icon.visual-icon {
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  padding: 7px;
+  border-radius: 14px;
+  background: #fff;
+}
+
+#addExerciseResults .list-row-body {
+  min-width: 0;
+}
+
+#addExerciseResults .list-row-title,
+#addExerciseResults .list-row-sub {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 520px) {
+  #editorExerciseList .draggable-row {
+    grid-template-columns: 24px 58px minmax(0, 1fr);
+    gap: 12px;
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  #editorExerciseList .drag-handle {
+    width: 24px;
+    height: 58px;
+    flex-basis: 24px;
+  }
+
+  #editorExerciseList .list-row-icon.visual-icon {
+    width: 58px;
+    height: 58px;
+    flex-basis: 58px;
+    padding: 7px;
+    border-radius: 14px;
+  }
+
+  #editorExerciseList .list-row-title {
+    font-size: 14px;
+  }
+
+  #editorExerciseList .field-row {
+    gap: 9px;
+  }
+
+  #editorExerciseList .field input,
+  #editorExerciseList .field select {
+    min-height: 46px;
+    padding: 11px;
+    font-size: 13.5px;
+  }
+}
+
+@media (max-width: 380px) {
+  #editorExerciseList .draggable-row {
+    grid-template-columns: 22px 52px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+  }
+
+  #editorExerciseList .drag-handle {
+    width: 22px;
+    height: 52px;
+  }
+
+  #editorExerciseList .list-row-icon.visual-icon {
+    width: 52px;
+    height: 52px;
+    flex-basis: 52px;
+    padding: 6px;
+  }
+
+  #editorExerciseList .field-row {
+    grid-template-columns: 1fr;
+  }
+
+  #editorExerciseList .field input,
+  #editorExerciseList .field select {
+    min-height: 44px;
+  }
+
+  #addExerciseResults .list-row {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  #addExerciseResults .list-row .btn,
+  #addExerciseResults .list-row button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
