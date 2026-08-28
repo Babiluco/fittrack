@@ -2551,9 +2551,9 @@ function persistRunnerSession(){
    quebrar o app. */
 function isValidActiveSession(s){
   if(!s || typeof s!=='object') return false;
-  if(s.status!=='active') return false;
-  if(!s.templateId || !Array.isArray(s.sets)) return false;
-  if(!getTemplate(s.templateId)) return false;
+  if(s.status && s.status!=='active') return false;
+  if(!s.templateId || !getTemplate(s.templateId)) return false;
+  if(!Array.isArray(s.sets) && !Array.isArray(s.exercises)) return false;
   return true;
 }
 
