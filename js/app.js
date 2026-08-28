@@ -680,16 +680,50 @@ function checkForRecoverableSession(){
     resumeActiveSession(s);
   });
 }
+function normalizeActiveSession(s){
+  const tpl = getTemplate(s.templateId);
+  const templateExercises = (tpl?.exercises||[]).map(ex=>Object.assign({}, ex));
+  const exercises = Array.isArray(s.exercises) && s.exercises.length ? s.exercises : templateExercises;
+  const safeExercises = exercises.filter(ex=>ex && ex.exerciseId && findExercise(ex.exerciseId));
+  const finalExercises = safeExercises.length ? safeExercises : templateExercises;
+  const sets = Array.isArray(s.sets) ? s.sets.slice(0, finalExercises.length) : [];
+
+  finalExercises.forEach((ex, index)=>{
+    const savedSets = Array.isArray(sets[index]) ? sets[index] : [];
+    const neededSets = Math.max(1, Number(ex.sets)||savedSets.length||1);
+    sets[index] = Array.from({length: neededSets}, (_, setIndex)=>{
+      const saved = savedSets[setIndex] || {};
+      return {
+        weight: Number(saved.weight)||0,
+        reps: Number(saved.reps ?? ex.reps)||0,
+        notes: saved.notes || '',
+        done: !!saved.done,
+        skipped: !!saved.skipped,
+      };
+    });
+  });
+
+  const exIndex = Math.min(Math.max(Number(s.exIndex)||0, 0), Math.max(finalExercises.length-1, 0));
+  return Object.assign({}, s, {
+    status: 'active',
+    exIndex,
+    exercises: finalExercises,
+    sets,
+    startedAt: Number(s.startedAt)||Date.now(),
+    dateKey: s.dateKey || todayKey(),
+  });
+}
 
 function resumeActiveSession(s){
-  const tpl = getTemplate(s.templateId);
+  s = normalizeActiveSession(s);
   runnerCtx = {
     id: s.id, templateId: s.templateId, dateKey: s.dateKey, mood: s.mood,
     exIndex: s.exIndex, startTime: s.startedAt,
     lastCompleted: s.lastCompleted, restState: s.restState,
-    exercises: Array.isArray(s.exercises) ? s.exercises : (tpl?.exercises||[]).map(ex=>Object.assign({}, ex)),
+    exercises: s.exercises,
     sets: s.sets,
   };
+
   let el = document.getElementById('runnerRoot');
   if(!el){ el = document.createElement('div'); el.id='runnerRoot'; document.body.appendChild(el); }
   el.innerHTML = `<div class="runner" id="runnerEl"></div>`;
@@ -700,7 +734,6 @@ function resumeActiveSession(s){
   if(runnerCtx.restState){
     const remaining = Math.round((runnerCtx.restState.endsAt-Date.now())/1000);
     if(runnerCtx.restState.paused){
-      // estava pausado — reabre já pausado, sem deixar o tempo correr
       startRestOverlay(runnerCtx.restState.pausedRemaining, Date.now()+runnerCtx.restState.pausedRemaining*1000);
       document.getElementById('restPauseBtn')?.click();
     } else if(remaining>0){
@@ -711,6 +744,7 @@ function resumeActiveSession(s){
       showToast('Descanso já tinha terminado', 'Hora de voltar para a próxima série!', '⏱');
     }
   }
+
   showToast('Treino retomado', 'Continuando de onde você parou.', '▶️');
 }
 
