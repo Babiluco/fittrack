@@ -3468,11 +3468,19 @@ function splitExerciseDescription(desc){
   return {description, similarTitle, similarText:match[2].trim()};
 }
 
+function openExerciseModal(exId){
+  const e = findExercise(exId) || {
+    id:exId,
+    name:'Exercício removido',
+    muscle:'todos',
+    desc:'Este exercício apareceu em treinos antigos, mas não está mais na biblioteca.',
+    execution:'Sem instruções salvas para este exercício.',
+    mistakes:'Sem observações salvas para este exercício.'
+  };
+
   const stats = WorkoutProgression.getExerciseStats(state, exId);
   const favorite = isFavoriteExercise(exId);
   const detailText = splitExerciseDescription(e.desc);
-
-openModal(`
 
   openModal(`
     <div class="exercise-detail">
@@ -3488,26 +3496,26 @@ openModal(`
       </div>
 
       <div class="exercise-detail-section intro">
-  <h4>Descrição</h4>
-  <p>${escapeHtml(detailText.description || 'Sem descrição cadastrada.')}</p>
-</div>
+        <h4>Descrição</h4>
+        <p>${escapeHtml(detailText.description || 'Sem descrição cadastrada.')}</p>
+      </div>
 
-<div class="exercise-detail-section execution">
-  <h4>Execução correta</h4>
-  <p>${escapeHtml(e.execution || 'Sem instruções salvas para este exercício.')}</p>
-</div>
+      <div class="exercise-detail-section execution">
+        <h4>Execução correta</h4>
+        <p>${escapeHtml(e.execution || 'Sem instruções salvas para este exercício.')}</p>
+      </div>
 
-<div class="exercise-detail-section care">
-  <h4>Dicas e cuidados</h4>
-  <p>${escapeHtml(e.mistakes || 'Sem observações salvas para este exercício.')}</p>
-</div>
+      <div class="exercise-detail-section care">
+        <h4>Dicas e cuidados</h4>
+        <p>${escapeHtml(e.mistakes || 'Sem observações salvas para este exercício.')}</p>
+      </div>
 
-${detailText.similarText ? `
-  <div class="exercise-detail-section similar">
-    <h4>${escapeHtml(detailText.similarTitle)}</h4>
-    <p>${escapeHtml(detailText.similarText)}</p>
-  </div>
-` : ''}
+      ${detailText.similarText ? `
+        <div class="exercise-detail-section similar">
+          <h4>${escapeHtml(detailText.similarTitle)}</h4>
+          <p>${escapeHtml(detailText.similarText)}</p>
+        </div>
+      ` : ''}
 
       <div class="exercise-detail-stats">
         <div>
