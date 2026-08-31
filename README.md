@@ -1,3 +1,4 @@
+[README.md](https://github.com/user-attachments/files/31663495/README.md)
 # FitTrack — Treinos e Progresso
 
 FitTrack é um aplicativo pessoal de acompanhamento de treinos, progresso corporal, metas, sono e rotina fitness. Ele funciona como PWA, pode ser instalado na tela inicial do celular e mantém os dados salvos localmente, com sincronização parcial via Supabase quando a conta está conectada.
@@ -48,7 +49,7 @@ js/
   sync.js           Sincronização de treinos e metas
   data.js           Biblioteca de exercícios e treinos padrão
   icons.js          Ícones SVG usados na interface
-  analytics.js      Indicadores, progresso, recordes e insights
+  insights.js       Indicadores, progresso, recordes e insights
   calendar.js       Agenda, calendário, remarcação e consistência
   photos.js         Fotos de progresso e evolução corporal
   timer.js          Cronômetro
@@ -140,7 +141,7 @@ Sempre que alterar arquivos importantes como `index.html`, `css/style.css` ou ar
 Exemplo:
 
 ```js
-const CACHE_VERSION = 'fittrack-v1.0.26';
+const CACHE_VERSION = 'fittrack-v1.0.29';
 ```
 
 ## Dados locais
@@ -169,7 +170,7 @@ Ao alterar o projeto:
 Versão atual de cache:
 
 ```text
-fittrack-v1.0.26
+fittrack-v1.0.29
 ```
 
 Estado das principais áreas:
