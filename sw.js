@@ -5,7 +5,7 @@
    Chamadas ao Supabase e outras APIs seguem pela rede para evitar dados antigos.
    ========================================================================== */
 
-const CACHE_VERSION = 'fittrack-v1.0.15';
+const CACHE_VERSION = 'fittrack-v1.0.17';
 const APP_SHELL_CACHE = `${CACHE_VERSION}:shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}:runtime`;
 
