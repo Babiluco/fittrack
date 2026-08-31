@@ -26,7 +26,64 @@ const SYNC = {
     });
     return session;
   },
-  async syncWorkout(session){
+  ensureQueue(){
+    state.syncQueue = state.syncQueue && typeof state.syncQueue === 'object'
+      ? state.syncQueue
+      : {workouts:[], lastAttemptAt:null};
+    state.syncQueue.workouts = Array.isArray(state.syncQueue.workouts) ? state.syncQueue.workouts : [];
+    return state.syncQueue;
+  },
+  queueWorkout(session){
+    if(!session) return false;
+    this.prepareWorkoutForSync(session);
+    const queue = this.ensureQueue();
+    const key = session.supabaseId || session.id;
+    if(!key) return false;
+    if(!queue.workouts.includes(key)){
+      queue.workouts.push(key);
+      persist();
+    }
+    return true;
+  },
+  unqueueWorkout(session){
+    if(!session || !state.syncQueue) return;
+    const keys = [session.supabaseId, session.id].filter(Boolean);
+    state.syncQueue.workouts = (state.syncQueue.workouts||[]).filter(key=>!keys.includes(key));
+    persist();
+  },
+  pendingWorkoutSessions(){
+    const queue = this.ensureQueue();
+    return queue.workouts
+      .map(key=>(state.history||[]).find(session=>session && (session.supabaseId===key || session.id===key)))
+      .filter(Boolean);
+  },
+  async flushWorkoutQueue(){
+    if(!CONFIG.FEATURES.CLOUD_SYNC) return {ok:false, synced:false, skipped:true};
+    if(typeof navigator !== 'undefined' && navigator.onLine === false) return {ok:false, synced:false, offline:true};
+
+    const queue = this.ensureQueue();
+    const pending = this.pendingWorkoutSessions();
+    if(!pending.length) return {ok:true, synced:false, empty:true};
+
+    queue.lastAttemptAt = new Date().toISOString();
+    persist();
+
+    let synced = 0;
+    let failed = 0;
+    for(const session of pending){
+      const result = await this.syncWorkout(session, {fromQueue:true});
+      if(result && result.syncedAt){
+        session.syncedAt = result.syncedAt;
+        this.unqueueWorkout(session);
+        synced++;
+      } else {
+        failed++;
+      }
+    }
+    persist();
+    return {ok:failed===0, synced:synced>0, syncedCount:synced, failedCount:failed};
+  },
+  async syncWorkout(session, options){
     const supabase = SupabaseClient.getClient();
     if(!supabase || !session) return {ok:false, synced:false, skipped:true};
 
@@ -88,6 +145,7 @@ const SYNC = {
       return {ok:true, synced:true, syncedAt:new Date().toISOString()};
     }catch(error){
       console.error('[FitTrack Sync] syncWorkout', error);
+      if(!options?.fromQueue) this.queueWorkout(session);
       return {ok:false, synced:false, message:'Treino salvo neste aparelho, mas nao enviado ao Supabase.'};
     }
   },
