@@ -6,7 +6,6 @@
 let state = defaultState();
 let currentView = 'dashboard';
 let currentProfileTab = 'perfil';
-let profileEditOpen = false;
 let exerciseFilter = 'todos';
 let exerciseSearch = '';
 let workoutPickerFilter = 'todos';
@@ -4646,14 +4645,15 @@ function renderProfile(){
   `;
   document.getElementById('profileEditShortcut').addEventListener('click', ()=>{
     currentProfileTab = 'perfil';
-    profileEditOpen = true;
     renderProfile();
-    setTimeout(()=>document.getElementById('pName')?.focus(), 50);
+    setTimeout(()=>{
+      document.getElementById('profileEditCard')?.scrollIntoView({behavior:'smooth', block:'start'});
+      document.getElementById('pName')?.focus();
+    }, 50);
   });
   document.querySelectorAll('[data-tab]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       currentProfileTab=btn.dataset.tab;
-      if(currentProfileTab !== 'perfil') profileEditOpen = false;
       renderProfile();
     });
   });
@@ -4667,7 +4667,7 @@ function renderProfile(){
 function renderTabPerfil(){
   const c = document.getElementById('profileTabContent');
   const u = state.user;
-  c.innerHTML = `
+  const menuHtml = `
     <div class="profile-menu-list">
       <button class="profile-menu-row" id="openProfileEdit" type="button">
         <span class="profile-menu-icon">${icon('user',{size:19})}</span>
@@ -4689,45 +4689,39 @@ function renderTabPerfil(){
         <span>Progresso de treinos</span>
         <b>${icon('chevron-right',{size:18})}</b>
       </button>
-    </div>
-
-    <div class="card profile-edit-card ${profileEditOpen ? 'is-open' : ''}">
+    </div>`;
+  const formHtml = `
+    <div class="card profile-edit-card is-open" id="profileEditCard">
       <div class="profile-edit-title">
         <h3>Dados pessoais</h3>
-        <button class="btn btn-ghost btn-sm" id="closeProfileEdit" type="button">${profileEditOpen ? 'Fechar' : 'Editar'}</button>
       </div>
       <div class="profile-edit-fields">
-      <div class="field"><label>Nome</label><input type="text" id="pName" value="${escapeHtml(u.name)}"></div>
-      <div class="field-row">
-        <div class="field"><label>Altura (cm)</label><input type="number" id="pHeight" value="${u.height}"></div>
-        <div class="field"><label>Peso (kg)</label><input type="number" step="0.1" id="pWeight" value="${u.weight}"></div>
+        <div class="field"><label>Nome</label><input type="text" id="pName" value="${escapeHtml(u.name)}"></div>
+        <div class="field-row">
+          <div class="field"><label>Altura (cm)</label><input type="number" id="pHeight" value="${u.height}"></div>
+          <div class="field"><label>Peso (kg)</label><input type="number" step="0.1" id="pWeight" value="${u.weight}"></div>
+        </div>
+        <div class="field"><label>Objetivo</label>
+          <select id="pGoal">
+            ${['hipertrofia','emagrecimento','forca','condicionamento'].map(g=>`<option value="${g}" ${u.goal===g?'selected':''}>${capitalize(g==='forca'?'força':g)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Dias disponíveis/semana</label><input type="number" min="1" max="7" id="pDays" value="${u.availableDays}"></div>
+          <div class="field"><label>Tempo médio por treino (min)</label><input type="number" id="pTime" value="${u.avgWorkoutTime}"></div>
+        </div>
+        <button class="btn btn-primary btn-block" id="saveProfile">Salvar alterações</button>
       </div>
-      <div class="field"><label>Objetivo</label>
-        <select id="pGoal">
-          ${['hipertrofia','emagrecimento','forca','condicionamento'].map(g=>`<option value="${g}" ${u.goal===g?'selected':''}>${capitalize(g==='forca'?'força':g)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Dias disponíveis/semana</label><input type="number" min="1" max="7" id="pDays" value="${u.availableDays}"></div>
-        <div class="field"><label>Tempo médio por treino (min)</label><input type="number" id="pTime" value="${u.avgWorkoutTime}"></div>
-      </div>
-      <button class="btn btn-primary btn-block" id="saveProfile">Salvar alterações</button>
-      </div>
-    </div>
-  `;
-  document.getElementById('openProfileEdit').addEventListener('click', ()=>{
-    profileEditOpen = true;
-    renderTabPerfil();
-    setTimeout(()=>document.getElementById('pName')?.focus(), 50);
-  });
-  document.getElementById('closeProfileEdit').addEventListener('click', ()=>{
-    profileEditOpen = !profileEditOpen;
-    renderTabPerfil();
+    </div>`;
+  c.innerHTML = `${menuHtml}${formHtml}`;
+  document.getElementById('openProfileEdit')?.addEventListener('click', ()=>{
+    document.getElementById('profileEditCard')?.scrollIntoView({behavior:'smooth', block:'start'});
+    document.getElementById('pName')?.focus();
   });
   c.querySelectorAll('[data-nav]').forEach(el=>{
     el.addEventListener('click', ()=>navigate(el.dataset.nav, el.dataset.navtab));
   });
-  document.getElementById('saveProfile').addEventListener('click', async ()=>{
+  document.getElementById('saveProfile')?.addEventListener('click', async ()=>{
     const button = document.getElementById('saveProfile');
     button.disabled = true;
     button.textContent = 'Salvando...';
