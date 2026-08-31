@@ -1972,6 +1972,13 @@ function renderAgenda(){
   const end = new Date(start.getTime() + 6*86400000);
   const isCurrentWeek = agendaWeekOffset===0;
   const rangeLabel = `${start.getDate()} ${MONTH_SHORT[start.getMonth()]} – ${end.getDate()} ${MONTH_SHORT[end.getMonth()]}`;
+  const today = new Date();
+  const todayPlan = dayPlanFor(todayKey(today));
+  const todayWorkout = todayPlan.type === 'workout' && todayPlan.tpl ? todayPlan.tpl : null;
+  const todayDone = !!state.completedDates[todayKey(today)];
+  const todayFirstExercise = todayWorkout ? findExercise(todayWorkout.exercises[0]?.exerciseId) : null;
+  const todayCalories = todayWorkout ? estimatedCalories(todayWorkout) : 0;
+  const todayDateLabel = today.toLocaleDateString('pt-BR', {weekday:'long', day:'2-digit', month:'2-digit'});
 
   let doneCount = 0, totalWorkoutDays = 0;
   const days = [];
@@ -1990,6 +1997,55 @@ function renderAgenda(){
   const weekComplete = isCurrentWeek && wp.total>0 && wp.done>=wp.total;
 
   wrap.innerHTML = `
+    <section class="today-workout-panel ${todayWorkout?'':'is-rest'}">
+      <div class="today-workout-media">
+        ${todayWorkout ? exerciseMedia(todayFirstExercise, {size:'hero'}) : `<div class="today-workout-empty">${icon('moon',{size:42})}</div>`}
+      </div>
+      <div class="today-workout-copy">
+        <span class="today-workout-kicker">Treino do dia</span>
+        <h2>${todayWorkout ? escapeHtml(todayWorkout.name) : 'Dia de descanso'}</h2>
+        <p>${todayWorkout ? `${todayWorkout.exercises.length} exercícios | ${todayWorkout.estimatedTime} min | ~${todayCalories} kcal` : 'Recuperação também faz parte do plano.'}</p>
+      </div>
+      <div class="today-workout-actions">
+        ${todayWorkout ? `
+          <button class="btn btn-primary btn-block" id="todayWorkoutStart">${todayDone?'Ver treino':'Iniciar treino'}</button>
+          <button class="btn btn-ghost btn-block" id="todayWorkoutChoose">Escolher outro treino</button>
+        ` : `
+          <button class="btn btn-primary btn-block" id="todayWorkoutChoose">Escolher treino</button>
+        `}
+      </div>
+    </section>
+
+    ${todayWorkout ? `
+      <div class="today-workout-info-grid">
+        <button class="today-workout-info-card" id="todayWorkoutSchedule" type="button">
+          <span>${icon('calendar',{size:20})}</span>
+          <strong>Agenda de treino</strong>
+          <small>${todayDateLabel}</small>
+          <b>${icon('chevron-right',{size:18})}</b>
+        </button>
+        <div class="today-workout-info-card">
+          <span>${icon('trending-up',{size:20})}</span>
+          <strong>Dificuldade</strong>
+          <small>${todayWorkout.difficulty || 'Intermediário'}</small>
+        </div>
+      </div>
+      <div class="section-title">Exercícios do treino</div>
+      <div class="today-exercise-list">
+        ${todayWorkout.exercises.map((ex,idx)=>{
+          const e = findExercise(ex.exerciseId) || {id:ex.exerciseId, name:'Exercício', muscle:todayWorkout.muscle};
+          return `<button class="today-exercise-row" type="button" data-today-ex="${escapeHtml(e.id)}">
+            <span class="today-exercise-thumb visual-icon">${exerciseMedia(e, {size:'icon'})}</span>
+            <span class="today-exercise-copy">
+              <strong>${idx+1} ${escapeHtml(e.name)}</strong>
+              <small>${ex.sets} séries × ${ex.reps} reps${ex.load?` | ${WorkoutProgression.formatKg(ex.load)}`:''}</small>
+            </span>
+            <b>${icon('chevron-right',{size:18})}</b>
+          </button>`;
+        }).join('')}
+      </div>
+    ` : ''}
+
     <div class="agenda-week-nav">
       <button class="icon-btn" id="agendaPrevWeek" aria-label="Semana anterior">${icon('chevron-left')}</button>
       <div class="agenda-week-label">
@@ -2002,7 +2058,7 @@ function renderAgenda(){
     ${weekComplete?`<div class="agenda-complete-banner">${icon('check',{size:16})} Semana completa! Todos os treinos feitos.</div>`:''}
 
     <div class="week-grid" id="agendaGrid"></div>
-    <div class="section-title">Próximos passos</div>
+    <div class="section-title">Semana de treino</div>
     <div id="agendaList"></div>
   `;
 
@@ -2027,6 +2083,19 @@ function renderAgenda(){
   });
   grid.innerHTML = gridHtml;
   list.innerHTML = listHtml;
+
+  document.getElementById('todayWorkoutStart')?.addEventListener('click', ()=>{
+    if(todayWorkout) openWorkoutDetail(todayWorkout.id, todayKey(today));
+  });
+  document.getElementById('todayWorkoutChoose')?.addEventListener('click', ()=>{
+    openWorkoutPicker(todayKey(today), todayWorkout?.id || null);
+  });
+  document.getElementById('todayWorkoutSchedule')?.addEventListener('click', ()=>{
+    openDayDetail(todayKey(today));
+  });
+  document.querySelectorAll('[data-today-ex]').forEach(row=>{
+    row.addEventListener('click', ()=>openExerciseDetail(row.dataset.todayEx));
+  });
 
   document.querySelectorAll('[data-day],[data-daydetail]').forEach(elm=>{
     elm.addEventListener('click', ()=>{
