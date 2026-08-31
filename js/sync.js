@@ -12,8 +12,7 @@ const SYNC = {
     return {ok:true, synced:false, mock:true};
   },
   async syncWorkouts(){
-    log('[Sync mock] syncWorkouts');
-    return {ok:true, synced:false, mock:true};
+    return this.importWorkoutsFromSupabase();
   },
   prepareWorkoutForSync(session){
     if(!session) return session;
@@ -90,6 +89,104 @@ const SYNC = {
     }
     persist();
     return {ok:failed===0, synced:synced>0, syncedCount:synced, failedCount:failed};
+  },
+  async importWorkoutsFromSupabase(){
+    const supabase = SupabaseClient.getClient();
+    if(!supabase) return {ok:false, imported:false, skipped:true, message:'Cliente Supabase indisponível.'};
+
+    const user = await currentAuthUser();
+    if(!user) return {ok:false, imported:false, skipped:true, message:'Usuário não autenticado.'};
+
+    try{
+      const {data: workouts, error: workoutsError} = await supabase
+        .from('workouts')
+        .select('id,user_id,name,started_at,completed_at,duration_seconds,total_load,total_reps,training_volume,calories')
+        .eq('user_id', user.id)
+        .order('completed_at', {ascending:false});
+      if(workoutsError) throw workoutsError;
+      if(!workouts || !workouts.length) return {ok:true, imported:false, importedCount:0};
+
+      const workoutIds = workouts.map(row=>row.id).filter(Boolean);
+      const {data: workoutExercises, error: exercisesError} = await supabase
+        .from('workout_exercises')
+        .select('id,workout_id,exercise_id,exercise_name,muscle_group,exercise_order')
+        .in('workout_id', workoutIds)
+        .order('exercise_order', {ascending:true});
+      if(exercisesError) throw exercisesError;
+
+      const workoutExerciseIds = (workoutExercises||[]).map(row=>row.id).filter(Boolean);
+      let workoutSets = [];
+      if(workoutExerciseIds.length){
+        const {data: sets, error: setsError} = await supabase
+          .from('workout_sets')
+          .select('id,workout_exercise_id,set_number,weight,reps,completed')
+          .in('workout_exercise_id', workoutExerciseIds)
+          .order('set_number', {ascending:true});
+        if(setsError) throw setsError;
+        workoutSets = sets || [];
+      }
+
+      const existingKeys = new Set((state.history||[]).flatMap(session=>[session.id, session.supabaseId].filter(Boolean)));
+      const imported = [];
+      workouts.forEach(workout=>{
+        if(existingKeys.has(workout.id)) return;
+        const exerciseRows = (workoutExercises||[])
+          .filter(row=>row.workout_id === workout.id)
+          .sort((a,b)=>(Number(a.exercise_order)||0) - (Number(b.exercise_order)||0));
+        const exercisesLog = exerciseRows.map(exerciseRow=>{
+          const matchedExercise = matchExerciseFromRemote(exerciseRow);
+          const setRows = workoutSets
+            .filter(row=>row.workout_exercise_id === exerciseRow.id)
+            .sort((a,b)=>(Number(a.set_number)||0) - (Number(b.set_number)||0));
+          return {
+            exerciseId: exerciseRow.exercise_id || matchedExercise?.id || `remote_${exerciseRow.id}`,
+            exerciseName: exerciseRow.exercise_name || matchedExercise?.name || 'Exercício',
+            muscle: exerciseRow.muscle_group || matchedExercise?.muscle || null,
+            supabaseId: exerciseRow.id,
+            sets: setRows.map(set=>({
+              supabaseId: set.id,
+              weight: numberOrNull(set.weight) || 0,
+              reps: Number.isFinite(Number(set.reps)) ? Math.max(0, Math.round(Number(set.reps))) : 0,
+              notes:'',
+              done: set.completed !== false,
+              skipped: false,
+            })),
+          };
+        });
+        imported.push({
+          id: workout.id,
+          supabaseId: workout.id,
+          templateId: 'remote_workout',
+          name: workout.name || 'Treino',
+          date: dateKeyFromIso(workout.completed_at || workout.started_at),
+          startedAt: workout.started_at || workout.completed_at || null,
+          completedAt: workout.completed_at || workout.started_at || null,
+          duration: Math.max(1, Math.round((Number(workout.duration_seconds)||0) / 60)),
+          volume: Number(workout.training_volume)||0,
+          calories: Number(workout.calories)||0,
+          exercisesLog,
+          syncedAt: new Date().toISOString(),
+        });
+      });
+
+      if(!imported.length) return {ok:true, imported:false, importedCount:0};
+
+      state.history = (state.history||[]).concat(imported)
+        .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+      imported.forEach(session=>{
+        if(session.date && !state.completedDates[session.date]){
+          state.completedDates[session.date] = session.templateId;
+        }
+      });
+      persist();
+      return {ok:true, imported:true, importedCount:imported.length};
+    }catch(error){
+      console.error('[FitTrack Sync] importWorkoutsFromSupabase', error);
+      const queue = this.ensureQueue();
+      queue.lastError = error?.message || 'Erro ao importar treinos do Supabase.';
+      persist();
+      return {ok:false, imported:false, message:queue.lastError};
+    }
   },
   async syncWorkout(session, options){
     const supabase = SupabaseClient.getClient();
@@ -198,6 +295,34 @@ function currentAuthUser(){
 function isoFromSessionDate(dateKey){
   if(!dateKey) return new Date().toISOString();
   return new Date(`${dateKey}T12:00:00`).toISOString();
+}
+
+function dateKeyFromIso(value){
+  if(!value) return todayKey();
+  const date = new Date(value);
+  if(Number.isNaN(date.getTime())) return todayKey();
+  const year = date.getFullYear();
+  const month = String(date.getMonth()+1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function matchExerciseFromRemote(row){
+  if(row?.exercise_id && typeof findExercise === 'function'){
+    const byId = findExercise(row.exercise_id);
+    if(byId) return byId;
+  }
+  const remoteName = normalizeText(row?.exercise_name || '');
+  if(!remoteName || typeof EXERCISE_LIBRARY === 'undefined') return null;
+  return EXERCISE_LIBRARY.find(ex=>normalizeText(ex.name) === remoteName) || null;
+}
+
+function normalizeText(value){
+  return String(value||'')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
 }
 
 function workoutMetrics(session){
