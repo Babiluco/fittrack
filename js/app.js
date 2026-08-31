@@ -1692,12 +1692,19 @@ function renderCalendarView(){
   const rescheduleAccept = document.getElementById('rescheduleAcceptBtn');
   if(rescheduleAccept) rescheduleAccept.addEventListener('click', ()=>{
     const m = missed[0];
-    Calendar.moveWorkout(m.dateKey, todayKey());
-    showToast('Treino remarcado', `${m.plan.label} movido para hoje.`, '📅');
+    const moved = Calendar.rescheduleMissedToToday
+      ? Calendar.rescheduleMissedToToday(m.dateKey)
+      : Calendar.moveWorkout(m.dateKey, todayKey());
+    if(moved){
+      showToast('Treino remarcado', `${m.plan.label} movido para hoje.`, '📅');
+    } else {
+      showToast('Não foi possível remarcar', 'Escolha o treino manualmente para hoje.', '⚠️');
+    }
     renderCalendarView();
   });
   const rescheduleDismiss = document.getElementById('rescheduleDismissBtn');
   if(rescheduleDismiss) rescheduleDismiss.addEventListener('click', ()=>{
+    state.rescheduleDismissed = state.rescheduleDismissed || {};
     state.rescheduleDismissed[missed[0].dateKey] = true;
     persist();
     renderCalendarView();
