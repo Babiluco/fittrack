@@ -445,6 +445,7 @@ async function retryPendingWorkoutSync(options){
   if(!options?.silent && result?.syncedCount){
     showToast('Treinos sincronizados', `${result.syncedCount} treino(s) pendente(s) foram enviados.`, '☁️');
   }
+  return result;
 }
 
 function isPasswordRecoveryUrl(){
@@ -4873,6 +4874,12 @@ function lastWeekSummary(){
 
 function renderTabConfig(){
   const c = document.getElementById('profileTabContent');
+  const syncQueue = state.syncQueue || {};
+  const pendingWorkouts = Array.isArray(syncQueue.workouts) ? syncQueue.workouts.length : 0;
+  const unsyncedLocalWorkouts = (state.history||[]).filter(session=>session && !session.syncedAt).length;
+  const syncStatusText = unsyncedLocalWorkouts
+    ? `${unsyncedLocalWorkouts} treino(s) local(is) ainda não confirmado(s) no Supabase.`
+    : 'Treinos locais confirmados neste aparelho.';
   c.innerHTML = `
     <div class="card" style="margin-bottom:14px;">
       <h4 style="margin-bottom:10px;font-size:13px;">Conta FitTrack</h4>
@@ -4905,6 +4912,12 @@ function renderTabConfig(){
         <label class="btn btn-ghost" style="cursor:pointer;">⬆️ Importar histórico<input type="file" id="importInput" accept="application/json" style="display:none;"></label>
       </div>
     </div>
+    <div class="card" style="margin-bottom:14px;">
+      <h4 style="margin-bottom:10px;font-size:13px;">Sincronização</h4>
+      <p style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:10px;">${syncStatusText}</p>
+      <p style="font-size:11.5px;color:var(--text-faint);line-height:1.5;margin-bottom:12px;">Fila pendente: ${pendingWorkouts} treino(s).${syncQueue.lastError ? ` Último erro: ${escapeHtml(syncQueue.lastError)}` : ''}</p>
+      <button class="btn btn-primary btn-block" id="syncNowBtn">Sincronizar agora</button>
+    </div>
     <div class="card">
       <h4 style="margin-bottom:10px;font-size:13px;color:var(--red);">Zona de risco</h4>
       <button class="btn btn-danger btn-block" id="clearDataBtn">Limpar todos os dados</button>
@@ -4916,6 +4929,23 @@ function renderTabConfig(){
   });
   document.getElementById('cfgThemeToggle').addEventListener('click', ()=>{ toggleTheme(); renderTabConfig(); });
   document.getElementById('openOnboardingBtn').addEventListener('click', ()=>navigate('onboarding'));
+  document.getElementById('syncNowBtn').addEventListener('click', async ()=>{
+    const button = document.getElementById('syncNowBtn');
+    button.disabled = true;
+    button.textContent = 'Sincronizando...';
+    if(typeof SYNC !== 'undefined' && typeof SYNC.queueUnsyncedWorkouts === 'function'){
+      SYNC.queueUnsyncedWorkouts();
+    }
+    const result = await retryPendingWorkoutSync({silent:true});
+    if(result?.syncedCount){
+      showToast('Treinos sincronizados', `${result.syncedCount} treino(s) enviados ao Supabase.`, '☁️');
+    } else if(result?.failedCount){
+      showToast('Sincronização pendente', 'O treino ficou salvo no aparelho. Tente novamente com internet.', '⚠️');
+    } else {
+      showToast('Nada pendente', 'Não há treinos aguardando envio.', '✅');
+    }
+    renderTabConfig();
+  });
   document.getElementById('exportBtn').addEventListener('click', ()=>{
     const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
