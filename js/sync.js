@@ -214,7 +214,7 @@ const SYNC = {
       state.goals = state.goals || [];
       let importedCount = 0;
       data.forEach(row=>{
-        const text = row.title || row.text || row.name || row.description || 'Meta';
+        const text = row.title || row.text || row.name || row.description || row.type || 'Meta';
         const done = row.status === 'completed' || row.status === 'done' || row.completed === true;
         const existing = state.goals.find(goal=>goal && (goal.supabaseId === row.id || goal.id === row.id));
         if(existing){
@@ -520,16 +520,9 @@ function goalPayloadVariants(goal, userId, status){
   const base = {id: goal.supabaseId, user_id: userId};
   const text = goal.text || goal.label || 'Meta';
   return [
-    Object.assign({}, base, {title:text, status, category:goal.category || 'geral'}),
-    Object.assign({}, base, {text, status, category:goal.category || 'geral'}),
-    Object.assign({}, base, {name:text, status, category:goal.category || 'geral'}),
-    Object.assign({}, base, {description:text, status, category:goal.category || 'geral'}),
-    Object.assign({}, base, {goal:text, status, category:goal.category || 'geral'}),
-    Object.assign({}, base, {title:text, status}),
-    Object.assign({}, base, {text, status}),
-    Object.assign({}, base, {name:text, status}),
-    Object.assign({}, base, {description:text, status}),
-    Object.assign({}, base, {goal:text, status}),
+    Object.assign({}, base, {type:text, status, category:goal.category || 'geral'}),
+    Object.assign({}, base, {type:text, status}),
+    Object.assign({}, base, {type:text}),
   ];
 }
 
