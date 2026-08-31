@@ -29,9 +29,12 @@ const DB = {
         if(result && result.syncedAt){
           session.syncedAt = result.syncedAt;
           persist();
+        } else if(typeof SYNC.queueWorkout === 'function'){
+          SYNC.queueWorkout(session);
         }
       }).catch(error=>{
         console.error('[FitTrack DB] syncWorkout', error);
+        if(typeof SYNC.queueWorkout === 'function') SYNC.queueWorkout(session);
       });
     }
     return session;
