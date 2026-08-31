@@ -5,7 +5,7 @@
    Chamadas ao Supabase e outras APIs seguem pela rede para evitar dados antigos.
    ========================================================================== */
 
-const CACHE_VERSION = 'fittrack-v1.0.28';
+const CACHE_VERSION = 'fittrack-v1.0.29';
 const APP_SHELL_CACHE = `${CACHE_VERSION}:shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}:runtime`;
 
@@ -30,7 +30,7 @@ const APP_SHELL = [
   './js/sync.js',
   './js/data.js',
   './js/icons.js',
-  './js/analytics.js',
+  './js/insights.js',
   './js/progression.js',
   './js/calendar.js',
   './js/photos.js',
