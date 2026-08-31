@@ -3751,6 +3751,205 @@ function renderExerciseProgressChart(exId){
   renderLineChart(chart, points, {height:180});
 }
 
+/* ======================================================================
+   VIEW: SONO
+   ====================================================================== */
+function parseSleepMinutes(time){
+  if(!time || !time.includes(':')) return null;
+  const parts = time.split(':').map(Number);
+  if(parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return null;
+  return parts[0] * 60 + parts[1];
+}
+
+function sleepDurationHours(bedtime, wakeTime){
+  const start = parseSleepMinutes(bedtime);
+  let end = parseSleepMinutes(wakeTime);
+  if(start === null || end === null) return 0;
+  if(end <= start) end += 24 * 60;
+  return Math.round(((end - start) / 60) * 10) / 10;
+}
+
+function recentSleepLogs(days){
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+  cutoff.setHours(0,0,0,0);
+  return [...(state.sleepLogs||[])]
+    .filter(log=>new Date(log.date + 'T00:00:00') >= cutoff)
+    .sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+function sleepAverage(logs, field){
+  const values = logs.map(log=>Number(log[field])||0).filter(Boolean);
+  if(!values.length) return 0;
+  return Math.round((values.reduce((sum,value)=>sum+value,0) / values.length) * 10) / 10;
+}
+
+function sleepDateLabel(dateKey){
+  if(!dateKey || !dateKey.includes('-')) return dateKey || '';
+  const parts = dateKey.split('-');
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
+function sleepInsight(avgHours, avgQuality, avgEnergy){
+  if(!avgHours) return 'Registre algumas noites para o FitTrack identificar seu padrão.';
+  if(avgHours < 6.5) return 'Seu tempo médio está baixo. Priorize uma janela de sono mais longa nos próximos dias.';
+  if(avgQuality <= 2) return 'A duração existe, mas a qualidade está baixa. Observe cafeína, telas e horários muito variáveis.';
+  if(avgEnergy <= 2) return 'Sua energia ainda está baixa. Vale acompanhar estresse, recuperação e horário de acordar.';
+  if(avgHours >= 7 && avgQuality >= 4) return 'Seu sono está sustentando bem a rotina de treino.';
+  return 'Você está dentro de uma zona funcional. Pequenas melhorias de regularidade podem ajudar.';
+}
+
+function sleepChartData(){
+  const map = new Map((state.sleepLogs||[]).map(log=>[log.date, log]));
+  const points = [];
+  for(let i=13;i>=0;i--){
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const key = todayKey(date);
+    const log = map.get(key);
+    points.push({
+      label: key.slice(5).split('-').reverse().join('/'),
+      value: log ? Number(log.durationHours)||0 : 0,
+    });
+  }
+  return points;
+}
+
+function renderSono(){
+  const logs = [...(state.sleepLogs||[])].sort((a,b)=>b.date.localeCompare(a.date));
+  const recent = recentSleepLogs(7);
+  const latest = logs[0];
+  const avgHours = sleepAverage(recent, 'durationHours');
+  const avgQuality = sleepAverage(recent, 'quality');
+  const avgEnergy = sleepAverage(recent, 'energy');
+  const avgStress = sleepAverage(recent, 'stress');
+  const todayLog = logs.find(log=>log.date === todayKey());
+  const wrap = document.getElementById('viewWrap');
+  wrap.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Sono</h1>
+        <p>Registre descanso, energia e sinais de recuperação.</p>
+      </div>
+    </div>
+
+    <div class="grid grid-4 sleep-kpis">
+      <div class="card stat-card"><span class="stat-label">Média 7 dias</span><span class="stat-value">${avgHours || '--'}<span style="font-size:13px;color:var(--text-dim);">h</span></span></div>
+      <div class="card stat-card"><span class="stat-label">Qualidade</span><span class="stat-value">${avgQuality || '--'}<span style="font-size:13px;color:var(--text-dim);">/5</span></span></div>
+      <div class="card stat-card"><span class="stat-label">Energia</span><span class="stat-value">${avgEnergy || '--'}<span style="font-size:13px;color:var(--text-dim);">/5</span></span></div>
+      <div class="card stat-card"><span class="stat-label">Estresse</span><span class="stat-value">${avgStress || '--'}<span style="font-size:13px;color:var(--text-dim);">/5</span></span></div>
+    </div>
+
+    <div class="grid grid-2 sleep-layout">
+      <section class="card sleep-form-card">
+        <div class="section-title" style="margin-top:0;">Registro de hoje</div>
+        <div class="field"><label>Data</label><input type="date" id="sleepDate" value="${todayLog?.date || todayKey()}"></div>
+        <div class="field-row">
+          <div class="field"><label>Fui dormir</label><input type="time" id="sleepBedtime" value="${todayLog?.bedtime || '23:00'}"></div>
+          <div class="field"><label>Acordei</label><input type="time" id="sleepWakeTime" value="${todayLog?.wakeTime || '07:00'}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Qualidade do sono</label><select id="sleepQuality">
+            ${[1,2,3,4,5].map(n=>`<option value="${n}" ${(todayLog?.quality||4)==n?'selected':''}>${n} / 5</option>`).join('')}
+          </select></div>
+          <div class="field"><label>Energia ao acordar</label><select id="sleepEnergy">
+            ${[1,2,3,4,5].map(n=>`<option value="${n}" ${(todayLog?.energy||4)==n?'selected':''}>${n} / 5</option>`).join('')}
+          </select></div>
+        </div>
+        <div class="field"><label>Estresse no dia</label><select id="sleepStress">
+          ${[1,2,3,4,5].map(n=>`<option value="${n}" ${(todayLog?.stress||2)==n?'selected':''}>${n} / 5</option>`).join('')}
+        </select></div>
+        <div class="field"><label>Observações</label><textarea id="sleepNotes" rows="3" placeholder="Ex: acordei durante a noite, muito cansaço, dormi bem...">${escapeHtml(todayLog?.notes || '')}</textarea></div>
+        <button class="btn btn-primary btn-block" id="saveSleepLog">Salvar sono</button>
+      </section>
+
+      <section class="card sleep-insight-card">
+        <div class="section-title" style="margin-top:0;">Recuperação</div>
+        <div class="sleep-score">
+          <span>${avgHours ? Math.min(100, Math.round((avgHours / 8) * 70 + (avgQuality / 5) * 30)) : '--'}</span>
+          <small>${avgHours ? 'pontuação estimada' : 'sem dados'}</small>
+        </div>
+        <p>${sleepInsight(avgHours, avgQuality, avgEnergy)}</p>
+        ${latest ? `<div class="sleep-latest">
+          <b>Último registro</b>
+          <span>${sleepDateLabel(latest.date)} · ${latest.durationHours}h · qualidade ${latest.quality}/5</span>
+        </div>` : '<div class="empty-state compact"><span class="emoji">🌙</span>Nenhuma noite registrada ainda.</div>'}
+      </section>
+    </div>
+
+    <section style="margin-top:20px;">
+      <div class="section-title">Últimos 14 dias</div>
+      <div class="card sleep-chart-card" id="sleepDurationChart"></div>
+    </section>
+
+    <section style="margin-top:20px;">
+      <div class="section-title">Histórico</div>
+      <div id="sleepHistoryList"></div>
+    </section>
+  `;
+
+  renderLineChart(document.getElementById('sleepDurationChart'), sleepChartData(), {height:160, ariaLabel:'Horas de sono nos últimos 14 dias'});
+  renderSleepHistory();
+
+  document.getElementById('saveSleepLog').addEventListener('click', ()=>{
+    const date = document.getElementById('sleepDate').value || todayKey();
+    const bedtime = document.getElementById('sleepBedtime').value;
+    const wakeTime = document.getElementById('sleepWakeTime').value;
+    const durationHours = sleepDurationHours(bedtime, wakeTime);
+    if(!bedtime || !wakeTime || !durationHours){
+      showToast('Registro incompleto', 'Preencha o horário de dormir e acordar.', '⚠️');
+      return;
+    }
+    state.sleepLogs = state.sleepLogs || [];
+    const existing = state.sleepLogs.find(log=>log.date === date);
+    const entry = {
+      id: existing?.id || cryptoId(),
+      date,
+      bedtime,
+      wakeTime,
+      durationHours,
+      quality: Number(document.getElementById('sleepQuality').value)||3,
+      energy: Number(document.getElementById('sleepEnergy').value)||3,
+      stress: Number(document.getElementById('sleepStress').value)||3,
+      notes: document.getElementById('sleepNotes').value.trim(),
+    };
+    if(existing) Object.assign(existing, entry);
+    else state.sleepLogs.push(entry);
+    persist();
+    showToast('Sono salvo', `${durationHours}h registradas para ${sleepDateLabel(date)}.`, '🌙');
+    renderSono();
+  });
+}
+
+function renderSleepHistory(){
+  const list = document.getElementById('sleepHistoryList');
+  if(!list) return;
+  const logs = [...(state.sleepLogs||[])].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,20);
+  if(!logs.length){
+    list.innerHTML = `<div class="empty-state"><span class="emoji">🌙</span>Seus registros de sono aparecerão aqui.</div>`;
+    return;
+  }
+  list.innerHTML = logs.map(log=>`
+    <div class="list-row sleep-row">
+      <div class="list-row-icon">🌙</div>
+      <div class="list-row-body">
+        <div class="list-row-title">${sleepDateLabel(log.date)} · ${log.durationHours}h</div>
+        <div class="list-row-sub">Dormiu ${escapeHtml(log.bedtime)} · acordou ${escapeHtml(log.wakeTime)} · qualidade ${log.quality}/5 · energia ${log.energy}/5</div>
+        ${log.notes ? `<div class="list-row-sub">${escapeHtml(log.notes)}</div>` : ''}
+      </div>
+      <button class="btn btn-ghost btn-icon" data-delete-sleep="${log.id}" aria-label="Excluir registro de sono">${icon('trash-2',{size:18})}</button>
+    </div>
+  `).join('');
+  document.querySelectorAll('[data-delete-sleep]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      state.sleepLogs = (state.sleepLogs||[]).filter(log=>log.id !== btn.dataset.deleteSleep);
+      persist();
+      showToast('Registro removido', 'O registro de sono foi excluído deste aparelho.', '🗑️');
+      renderSono();
+    });
+  });
+}
+
 function validDisplaySets(sets){
   return (sets||[]).filter(set=>
     set && set.done && !set.skipped &&
