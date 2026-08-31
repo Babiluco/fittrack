@@ -6,6 +6,7 @@
 let state = defaultState();
 let currentView = 'dashboard';
 let currentProfileTab = 'perfil';
+let profileEditOpen = false;
 let exerciseFilter = 'todos';
 let exerciseSearch = '';
 let workoutPickerFilter = 'todos';
@@ -4604,6 +4605,14 @@ function volumeSeriesData(){
    ====================================================================== */
 function renderProfile(){
   const wrap = document.getElementById('viewWrap');
+  const u = state.user || {};
+  const displayName = dashboardDisplayName(u.name);
+  const goalLabel = capitalize(u.goal==='forca'?'força':(u.goal||'hipertrofia'));
+  const profileStats = [
+    {label:'Altura', value:u.height ? `${u.height}cm` : '--'},
+    {label:'Peso', value:u.weight ? `${u.weight}kg` : '--'},
+    {label:'Treinos', value:(state.history||[]).length},
+  ];
   const tabs = [
     {id:'perfil', label:'Perfil'},
     {id:'metas', label:'Metas'},
@@ -4611,14 +4620,42 @@ function renderProfile(){
   ];
   if(!['perfil','metas','config'].includes(currentProfileTab)) currentProfileTab='perfil';
   wrap.innerHTML = `
-    <div class="view-header"><div class="greeting"><h1>Perfil</h1><p>Suas informações e preferências.</p></div></div>
+    <div class="view-header profile-page-header"><div class="greeting"><h1>Perfil</h1><p>Suas informações e preferências.</p></div></div>
+    <section class="profile-summary-card">
+      <div class="profile-summary-top">
+        <div class="profile-avatar">${escapeHtml(displayName.display.charAt(0).toUpperCase())}</div>
+        <div class="profile-summary-copy">
+          <h2 title="${escapeHtml(u.name || '')}" class="${displayName.sizeClass}">${escapeHtml(displayName.display)}</h2>
+          <p>${escapeHtml(goalLabel)}</p>
+        </div>
+        <button class="btn btn-primary btn-sm" id="profileEditShortcut" type="button">Editar</button>
+      </div>
+      <div class="profile-summary-stats">
+        ${profileStats.map(item=>`
+          <div>
+            <strong>${escapeHtml(String(item.value))}</strong>
+            <span>${item.label}</span>
+          </div>
+        `).join('')}
+      </div>
+    </section>
     <div class="tabs" id="profileTabs">
       ${tabs.map(t=>`<button class="tab-btn ${currentProfileTab===t.id?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
     </div>
     <div id="profileTabContent"></div>
   `;
+  document.getElementById('profileEditShortcut').addEventListener('click', ()=>{
+    currentProfileTab = 'perfil';
+    profileEditOpen = true;
+    renderProfile();
+    setTimeout(()=>document.getElementById('pName')?.focus(), 50);
+  });
   document.querySelectorAll('[data-tab]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{ currentProfileTab=btn.dataset.tab; renderProfile(); });
+    btn.addEventListener('click', ()=>{
+      currentProfileTab=btn.dataset.tab;
+      if(currentProfileTab !== 'perfil') profileEditOpen = false;
+      renderProfile();
+    });
   });
   const renderers = {
     perfil: renderTabPerfil, metas: renderTabMetas, config: renderTabConfig,
@@ -4631,7 +4668,35 @@ function renderTabPerfil(){
   const c = document.getElementById('profileTabContent');
   const u = state.user;
   c.innerHTML = `
-    <div class="card">
+    <div class="profile-menu-list">
+      <button class="profile-menu-row" id="openProfileEdit" type="button">
+        <span class="profile-menu-icon">${icon('user',{size:19})}</span>
+        <span>Dados pessoais</span>
+        <b>${icon('chevron-right',{size:18})}</b>
+      </button>
+      <button class="profile-menu-row" type="button" data-nav="progresso" data-navtab="corpo">
+        <span class="profile-menu-icon">${icon('trending-up',{size:19})}</span>
+        <span>Acompanhamento</span>
+        <b>${icon('chevron-right',{size:18})}</b>
+      </button>
+      <button class="profile-menu-row" type="button" data-nav="history">
+        <span class="profile-menu-icon">${icon('clock',{size:19})}</span>
+        <span>Histórico de treinos</span>
+        <b>${icon('chevron-right',{size:18})}</b>
+      </button>
+      <button class="profile-menu-row" type="button" data-nav="progresso">
+        <span class="profile-menu-icon">${icon('trending-up',{size:19})}</span>
+        <span>Progresso de treinos</span>
+        <b>${icon('chevron-right',{size:18})}</b>
+      </button>
+    </div>
+
+    <div class="card profile-edit-card ${profileEditOpen ? 'is-open' : ''}">
+      <div class="profile-edit-title">
+        <h3>Dados pessoais</h3>
+        <button class="btn btn-ghost btn-sm" id="closeProfileEdit" type="button">${profileEditOpen ? 'Fechar' : 'Editar'}</button>
+      </div>
+      <div class="profile-edit-fields">
       <div class="field"><label>Nome</label><input type="text" id="pName" value="${escapeHtml(u.name)}"></div>
       <div class="field-row">
         <div class="field"><label>Altura (cm)</label><input type="number" id="pHeight" value="${u.height}"></div>
@@ -4647,8 +4712,21 @@ function renderTabPerfil(){
         <div class="field"><label>Tempo médio por treino (min)</label><input type="number" id="pTime" value="${u.avgWorkoutTime}"></div>
       </div>
       <button class="btn btn-primary btn-block" id="saveProfile">Salvar alterações</button>
+      </div>
     </div>
   `;
+  document.getElementById('openProfileEdit').addEventListener('click', ()=>{
+    profileEditOpen = true;
+    renderTabPerfil();
+    setTimeout(()=>document.getElementById('pName')?.focus(), 50);
+  });
+  document.getElementById('closeProfileEdit').addEventListener('click', ()=>{
+    profileEditOpen = !profileEditOpen;
+    renderTabPerfil();
+  });
+  c.querySelectorAll('[data-nav]').forEach(el=>{
+    el.addEventListener('click', ()=>navigate(el.dataset.nav, el.dataset.navtab));
+  });
   document.getElementById('saveProfile').addEventListener('click', async ()=>{
     const button = document.getElementById('saveProfile');
     button.disabled = true;
@@ -5386,19 +5464,36 @@ function openNotifPanel(){
   state.notifications.forEach(n=>n.read=true);
   persist();
   if(state.notifications.length===0){
-    openModal(`<h2 style="margin-bottom:10px;">Notificações</h2><div class="empty-state"><span class="emoji">🔔</span>Nenhuma notificação ainda.</div>`);
+    openModal(`
+      <div class="notification-panel">
+        <div class="notification-header">
+          <h2>Notificações</h2>
+          <span>${icon('bell',{size:18})}</span>
+        </div>
+        <div class="empty-state compact"><span class="emoji">🔔</span>Nenhuma notificação ainda.</div>
+      </div>
+    `);
     return;
   }
   openModal(`
-    <h2 style="margin-bottom:14px;">Notificações</h2>
-    ${state.notifications.map(n=>`
-      <div class="list-row">
-        <div class="list-row-icon">${n.emoji||'🔔'}</div>
-        <div class="list-row-body">
-          <div class="list-row-title">${n.title}</div>
-          <div class="list-row-sub">${n.message}</div>
-        </div>
-      </div>`).join('')}
+    <div class="notification-panel">
+      <div class="notification-header">
+        <h2>Notificações</h2>
+        <span>${icon('bell',{size:18})}</span>
+      </div>
+      <div class="notification-list">
+        ${state.notifications.map(n=>`
+          <article class="notification-row">
+            <div class="notification-icon">${n.emoji||'🔔'}</div>
+            <div class="notification-copy">
+              <h3>${escapeHtml(n.title || 'FitTrack')}</h3>
+              <p>${escapeHtml(n.message || '')}</p>
+            </div>
+            <span class="notification-more" aria-hidden="true">⋮</span>
+          </article>
+        `).join('')}
+      </div>
+    </div>
   `);
 }
 
