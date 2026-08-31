@@ -5,13 +5,14 @@
    Chamadas ao Supabase e outras APIs seguem pela rede para evitar dados antigos.
    ========================================================================== */
 
-const CACHE_VERSION = 'fittrack-v1.0.2';
+const CACHE_VERSION = 'fittrack-v1.0.3';
 const APP_SHELL_CACHE = `${CACHE_VERSION}:shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}:runtime`;
 
 const APP_SHELL = [
   './',
   './index.html',
+  './offline.html',
   './manifest.json',
   './favicon.ico',
   './css/style.css',
@@ -78,7 +79,7 @@ async function networkFirstNavigation(request){
     return response;
   }catch(error){
     const cache = await caches.open(APP_SHELL_CACHE);
-    return (await cache.match('./index.html')) || Response.error();
+    return (await cache.match('./offline.html')) || (await cache.match('./index.html')) || Response.error();
   }
 }
 
