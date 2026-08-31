@@ -363,6 +363,7 @@ function renderAuthenticatedApp(){
   checkForRecoverableSession();
   setupSyncQueueListeners();
   syncCloudWorkouts({silent:true});
+  syncCloudGoals({silent:true});
   authAppRendered = true;
 }
 
@@ -414,6 +415,7 @@ function setupAuthStateListener(){
       if(!authAppRendered) renderAuthenticatedApp();
       else if(currentView==='profile') renderProfile();
       syncCloudWorkouts({silent:true});
+      syncCloudGoals({silent:true});
       return;
     }
     if(event==='SIGNED_OUT'){
@@ -435,6 +437,7 @@ function setupSyncQueueListeners(){
   syncQueueListenerReady = true;
   window.addEventListener('online', ()=>{
     retryPendingWorkoutSync({silent:false});
+    syncCloudGoals({silent:false});
   });
 }
 
@@ -463,6 +466,25 @@ async function syncCloudWorkouts(options){
     showToast('Treinos sincronizados', `${queueResult.syncedCount} treino(s) enviados ao Supabase.`, '☁️');
   }
   return Object.assign({}, queueResult||{}, importResult||{});
+}
+
+async function syncCloudGoals(options){
+  if(!CONFIG.FEATURES.CLOUD_SYNC || typeof SYNC === 'undefined' || typeof SYNC.syncGoals !== 'function') return;
+  if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  const result = await SYNC.syncGoals();
+  if(result?.importedCount){
+    if(!options?.silent) showToast('Metas atualizadas', `${result.importedCount} meta(s) baixada(s) do Supabase.`, '☁️');
+    if(currentView === 'dashboard') renderDashboard();
+    if(currentView === 'profile') renderProfile();
+  } else if(result?.syncedCount && !options?.silent){
+    showToast('Metas sincronizadas', `${result.syncedCount} alteração(ões) enviada(s).`, '☁️');
+  }
+  return result;
+}
+
+function saveGoalsAndSync(){
+  persist();
+  syncCloudGoals({silent:true});
 }
 
 function isPasswordRecoveryUrl(){
@@ -1594,7 +1616,9 @@ function renderMiniGoals(){
     row.addEventListener('click', ()=>{
       const g = state.goals.find(x=>x.id===row.dataset.goal);
       g.done = !g.done;
-      persist();
+      g.syncedAt = null;
+      if(typeof SYNC !== 'undefined' && typeof SYNC.queueGoal === 'function') SYNC.queueGoal(g);
+      saveGoalsAndSync();
       renderMiniGoals();
     });
   });
@@ -4366,7 +4390,9 @@ function renderTabMetas(){
     const input = document.getElementById('newGoalInput');
     if(!input.value.trim()) return;
     state.goals.push({id:cryptoId(), text:input.value.trim(), done:false, category:'geral'});
-    persist();
+    const goal = state.goals[state.goals.length-1];
+    if(typeof SYNC !== 'undefined' && typeof SYNC.queueGoal === 'function') SYNC.queueGoal(goal);
+    saveGoalsAndSync();
     renderTabMetas();
   });
   renderGoalsList();
@@ -4385,12 +4411,20 @@ function renderGoalsList(){
     el.addEventListener('click', ()=>{
       const g = state.goals.find(g=>g.id===el.dataset.toggle);
       g.done = !g.done;
-      persist();
+      g.syncedAt = null;
+      if(typeof SYNC !== 'undefined' && typeof SYNC.queueGoal === 'function') SYNC.queueGoal(g);
+      saveGoalsAndSync();
       renderGoalsList();
     });
   });
   list.querySelectorAll('[data-delgoal]').forEach(el=>{
-    el.addEventListener('click', ()=>{ state.goals = state.goals.filter(g=>g.id!==el.dataset.delgoal); persist(); renderGoalsList(); });
+    el.addEventListener('click', ()=>{
+      const goal = state.goals.find(g=>g.id===el.dataset.delgoal);
+      if(typeof SYNC !== 'undefined' && typeof SYNC.queueDeletedGoal === 'function') SYNC.queueDeletedGoal(goal);
+      state.goals = state.goals.filter(g=>g.id!==el.dataset.delgoal);
+      saveGoalsAndSync();
+      renderGoalsList();
+    });
   });
 }
 
@@ -4893,10 +4927,16 @@ function renderTabConfig(){
   const c = document.getElementById('profileTabContent');
   const syncQueue = state.syncQueue || {};
   const pendingWorkouts = Array.isArray(syncQueue.workouts) ? syncQueue.workouts.length : 0;
+  const pendingGoals = Array.isArray(syncQueue.goals) ? syncQueue.goals.length : 0;
+  const pendingDeletedGoals = Array.isArray(syncQueue.deletedGoals) ? syncQueue.deletedGoals.length : 0;
   const unsyncedLocalWorkouts = (state.history||[]).filter(session=>session && !session.syncedAt).length;
+  const unsyncedGoals = (state.goals||[]).filter(goal=>goal && !goal.syncedAt).length;
   const syncStatusText = unsyncedLocalWorkouts
     ? `${unsyncedLocalWorkouts} treino(s) local(is) ainda não confirmado(s) no Supabase.`
     : 'Treinos locais confirmados neste aparelho.';
+  const goalsSyncStatusText = unsyncedGoals || pendingDeletedGoals
+    ? `${unsyncedGoals} meta(s) local(is) e ${pendingDeletedGoals} exclusão(ões) pendente(s).`
+    : 'Metas locais confirmadas neste aparelho.';
   c.innerHTML = `
     <div class="card" style="margin-bottom:14px;">
       <h4 style="margin-bottom:10px;font-size:13px;">Conta FitTrack</h4>
@@ -4931,8 +4971,9 @@ function renderTabConfig(){
     </div>
     <div class="card" style="margin-bottom:14px;">
       <h4 style="margin-bottom:10px;font-size:13px;">Sincronização</h4>
-      <p style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:10px;">${syncStatusText}</p>
-      <p style="font-size:11.5px;color:var(--text-faint);line-height:1.5;margin-bottom:12px;">Fila pendente: ${pendingWorkouts} treino(s).${syncQueue.lastError ? ` Último erro: ${escapeHtml(syncQueue.lastError)}` : ''}</p>
+      <p style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:6px;">Treinos: ${syncStatusText}</p>
+      <p style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:10px;">Metas: ${goalsSyncStatusText}</p>
+      <p style="font-size:11.5px;color:var(--text-faint);line-height:1.5;margin-bottom:12px;">Fila pendente: ${pendingWorkouts} treino(s), ${pendingGoals} meta(s).${syncQueue.lastError ? ` Último erro: ${escapeHtml(syncQueue.lastError)}` : ''}</p>
       <button class="btn btn-primary btn-block" id="syncNowBtn">Sincronizar agora</button>
     </div>
     <div class="card">
@@ -4953,12 +4994,19 @@ function renderTabConfig(){
     if(typeof SYNC !== 'undefined' && typeof SYNC.queueUnsyncedWorkouts === 'function'){
       SYNC.queueUnsyncedWorkouts();
     }
-    const result = await syncCloudWorkouts({silent:true});
-    if(result?.importedCount){
-      showToast('Histórico atualizado', `${result.importedCount} treino(s) baixado(s) do Supabase.`, '☁️');
-    } else if(result?.syncedCount){
-      showToast('Treinos sincronizados', `${result.syncedCount} treino(s) enviados ao Supabase.`, '☁️');
-    } else if(result?.failedCount){
+    if(typeof SYNC !== 'undefined' && typeof SYNC.queueUnsyncedGoals === 'function'){
+      SYNC.queueUnsyncedGoals();
+    }
+    const workoutResult = await syncCloudWorkouts({silent:true});
+    const goalResult = await syncCloudGoals({silent:true});
+    const importedCount = (workoutResult?.importedCount||0) + (goalResult?.importedCount||0);
+    const syncedCount = (workoutResult?.syncedCount||0) + (goalResult?.syncedCount||0);
+    const failedCount = (workoutResult?.failedCount||0) + (goalResult?.failedCount||0);
+    if(importedCount){
+      showToast('Dados atualizados', `${importedCount} item(ns) baixado(s) do Supabase.`, '☁️');
+    } else if(syncedCount){
+      showToast('Dados sincronizados', `${syncedCount} alteração(ões) enviada(s).`, '☁️');
+    } else if(failedCount){
       showToast('Sincronização pendente', 'O treino ficou salvo no aparelho. Tente novamente com internet.', '⚠️');
     } else {
       showToast('Nada pendente', 'Não há treinos aguardando envio.', '✅');
