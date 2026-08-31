@@ -15,6 +15,7 @@ let runnerCtx = null; // contexto ativo do treino em execução
 let authUser = null;
 let authAppRendered = false;
 let authListenerReady = false;
+let syncQueueListenerReady = false;
 
 function persist(){ return saveState(state); }
 
@@ -360,6 +361,8 @@ function renderAuthenticatedApp(){
   navigate(shouldShowOnboarding() ? 'onboarding' : 'dashboard');
   maybeGenerateNotifications();
   checkForRecoverableSession();
+  setupSyncQueueListeners();
+  retryPendingWorkoutSync({silent:true});
   authAppRendered = true;
 }
 
@@ -410,6 +413,7 @@ function setupAuthStateListener(){
       applyTheme();
       if(!authAppRendered) renderAuthenticatedApp();
       else if(currentView==='profile') renderProfile();
+      retryPendingWorkoutSync({silent:true});
       return;
     }
     if(event==='SIGNED_OUT'){
@@ -424,6 +428,23 @@ function setupAuthStateListener(){
       authUser = session.user;
     }
   });
+}
+
+function setupSyncQueueListeners(){
+  if(syncQueueListenerReady) return;
+  syncQueueListenerReady = true;
+  window.addEventListener('online', ()=>{
+    retryPendingWorkoutSync({silent:false});
+  });
+}
+
+async function retryPendingWorkoutSync(options){
+  if(!CONFIG.FEATURES.CLOUD_SYNC || typeof SYNC === 'undefined' || typeof SYNC.flushWorkoutQueue !== 'function') return;
+  if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  const result = await SYNC.flushWorkoutQueue();
+  if(!options?.silent && result?.syncedCount){
+    showToast('Treinos sincronizados', `${result.syncedCount} treino(s) pendente(s) foram enviados.`, '☁️');
+  }
 }
 
 function isPasswordRecoveryUrl(){
