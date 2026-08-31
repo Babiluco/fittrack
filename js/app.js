@@ -3826,8 +3826,8 @@ function renderSono(){
   const todayLog = logs.find(log=>log.date === todayKey());
   const wrap = document.getElementById('viewWrap');
   wrap.innerHTML = `
-    <div class="page-header">
-      <div>
+    <div class="view-header">
+      <div class="greeting">
         <h1>Sono</h1>
         <p>Registre descanso, energia e sinais de recuperação.</p>
       </div>
