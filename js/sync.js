@@ -120,6 +120,7 @@ const SYNC = {
     this.prepareGoalForSync(goal);
     const status = goal.done ? 'completed' : 'active';
     const payloads = goalPayloadVariants(goal, user.id, status);
+    let lastColumnError = null;
 
     for(const payload of payloads){
       const {error} = await supabase
@@ -134,10 +135,11 @@ const SYNC = {
         persist();
         return {ok:false, synced:false, message:queue.lastError};
       }
+      lastColumnError = error;
     }
 
     const queue = this.ensureQueue();
-    queue.lastError = 'A tabela goals não aceitou os campos esperados pelo app.';
+    queue.lastError = lastColumnError?.message || 'A tabela goals não aceitou os campos esperados pelo app.';
     persist();
     return {ok:false, synced:false, message:queue.lastError};
   },
@@ -515,18 +517,25 @@ function normalizeText(value){
 }
 
 function goalPayloadVariants(goal, userId, status){
-  const base = {
-    id: goal.supabaseId,
-    user_id: userId,
-    status,
-    category: goal.category || 'geral',
-  };
+  const base = {id: goal.supabaseId, user_id: userId};
   const text = goal.text || goal.label || 'Meta';
+  const completed = status === 'completed';
   return [
-    Object.assign({}, base, {title:text}),
-    Object.assign({}, base, {text}),
-    {id:base.id, user_id:base.user_id, status:base.status, title:text},
-    {id:base.id, user_id:base.user_id, status:base.status, text},
+    Object.assign({}, base, {title:text, status, category:goal.category || 'geral'}),
+    Object.assign({}, base, {text, status, category:goal.category || 'geral'}),
+    Object.assign({}, base, {name:text, status, category:goal.category || 'geral'}),
+    Object.assign({}, base, {description:text, status, category:goal.category || 'geral'}),
+    Object.assign({}, base, {goal:text, status, category:goal.category || 'geral'}),
+    Object.assign({}, base, {title:text, status}),
+    Object.assign({}, base, {text, status}),
+    Object.assign({}, base, {name:text, status}),
+    Object.assign({}, base, {description:text, status}),
+    Object.assign({}, base, {goal:text, status}),
+    Object.assign({}, base, {title:text, completed}),
+    Object.assign({}, base, {text, completed}),
+    Object.assign({}, base, {name:text, completed}),
+    Object.assign({}, base, {description:text, completed}),
+    Object.assign({}, base, {goal:text, completed}),
   ];
 }
 
