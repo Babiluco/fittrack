@@ -1448,11 +1448,32 @@ function dashboardSleepSummary(){
 function dashboardBodySummary(){
   const latestMeasurement = [...(state.measurements||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];
   const latestWeight = [...(state.weightLog||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];
+  const currentWeight = latestWeight?.weight || latestMeasurement?.weight || state.user.weight || '';
+  const height = Number(state.user.height)||0;
+  const bmiValue = currentWeight && height ? (Number(currentWeight)/Math.pow(height/100, 2)).toFixed(1) : '';
   return {
-    weight: latestWeight?.weight || latestMeasurement?.weight || state.user.weight || '',
+    weight: currentWeight,
+    bmi: bmiValue,
     measurementDate: latestWeight?.date || latestMeasurement?.date || null,
     waist: latestMeasurement?.waist || '',
   };
+}
+
+function dashboardActivitySeries(){
+  const points = [];
+  for(let i=6;i>=0;i--){
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const key = todayKey(date);
+    const sessions = (state.history||[]).filter(session=>session.date === key);
+    const minutes = sessions.reduce((sum,session)=>sum+(Number(session.duration)||0),0);
+    points.push({
+      label: ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][date.getDay()],
+      value: minutes,
+      active: key === todayKey(),
+    });
+  }
+  return points;
 }
 
 function dashboardDisplayName(fullName){
@@ -1487,6 +1508,8 @@ function renderDashboard(){
   const bodyWeightLabel = body.weight ? `${body.weight} kg` : '--';
   const sleepLabel = sleep.avgHours ? `${sleep.avgHours}h` : '--';
   const displayName = dashboardDisplayName(state.user.name);
+  const activitySeries = dashboardActivitySeries();
+  const maxActivity = Math.max(1, ...activitySeries.map(day=>day.value));
 
   wrap.innerHTML = `
     <div class="view-header dashboard-header">
@@ -1499,30 +1522,68 @@ function renderDashboard(){
       </div>
     </div>
 
-    <section class="dashboard-summary-grid">
-      <div class="card dashboard-summary-card">
-        <span class="stat-label">Semana</span>
-        <strong>${wp.done}/${wp.total || 0}</strong>
-        <small>${week.minutes || 0} min treinados</small>
-        <div class="progress-track"><div class="progress-fill" style="width:${weekPct}%;"></div></div>
+    <section class="card dashboard-imc-card">
+      <div>
+        <h2>IMC</h2>
+        <p>${body.bmi ? 'Você está acompanhando seus dados corporais.' : 'Complete altura e peso no perfil para calcular.'}</p>
+        <button class="btn btn-ghost btn-sm" type="button" data-nav="profile">Mais informações</button>
       </div>
-      <div class="card dashboard-summary-card">
-        <span class="stat-label">Sequência</span>
-        <strong>${streak}</strong>
-        <small>dia${streak===1?'':'s'} em ritmo</small>
-        <div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, streak*14)}%;"></div></div>
+      <div class="dashboard-imc-meter" style="--pct:${body.bmi ? Math.min(100, Math.round((Number(body.bmi)/35)*100)) : 0};">
+        <strong>${body.bmi || '--'}</strong>
       </div>
-      <div class="card dashboard-summary-card">
-        <span class="stat-label">Sono</span>
+    </section>
+
+    <section class="dashboard-goals-strip">
+      <div class="dashboard-strip-title">
+        <span>Objetivos do dia</span>
+        <button class="btn btn-ghost btn-sm" type="button" data-nav="profile" data-navtab="metas">Check</button>
+      </div>
+      <div id="miniGoals"></div>
+    </section>
+
+    <section class="dashboard-section">
+      <div class="section-title">Status de atividades</div>
+      <div class="card dashboard-activity-card">
+        <div class="dashboard-card-heading">
+          <div>
+            <h3>Treinos da semana</h3>
+            <strong>${wp.done}/${wp.total || 0}</strong>
+          </div>
+          <span>${week.minutes || 0} min</span>
+        </div>
+        <div class="dashboard-activity-bars">
+          ${activitySeries.map(day=>`
+            <div class="dashboard-activity-day ${day.active?'active':''}">
+              <div class="dashboard-activity-bar" style="height:${Math.max(10, Math.round((day.value/maxActivity)*100))}%"></div>
+              <small>${day.label}</small>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </section>
+
+    <section class="card dashboard-sleep-card" data-nav="sono">
+      <div>
+        <h3>Tempo de sono</h3>
         <strong>${sleepLabel}</strong>
-        <small>${sleep.avgQuality ? `qualidade ${sleep.avgQuality}/5` : 'sem registro recente'}</small>
-        <div class="progress-track"><div class="progress-fill" style="width:${sleep.avgHours ? Math.min(100, Math.round((sleep.avgHours/8)*100)) : 0}%;"></div></div>
+        <p>${sleep.avgHours ? 'Média dos últimos 7 dias.' : 'Registre seu sono para acompanhar recuperação.'}</p>
       </div>
-      <div class="card dashboard-summary-card">
-        <span class="stat-label">Peso</span>
-        <strong>${bodyWeightLabel}</strong>
-        <small>${body.measurementDate ? fmtDate(body.measurementDate) : 'perfil atual'}</small>
-        <div class="progress-track"><div class="progress-fill" style="width:${body.weight ? 72 : 0}%;"></div></div>
+      <div class="dashboard-sleep-ring" style="--pct:${sleep.avgHours ? Math.min(100, Math.round((sleep.avgHours/8)*100)) : 0};">
+        <span>${sleep.avgHours ? Math.min(100, Math.round((sleep.avgHours/8)*100)) : 0}%</span>
+      </div>
+    </section>
+
+    <section class="dashboard-section">
+      <div class="section-title">Progresso de treinos <button class="btn btn-ghost btn-sm" type="button" data-nav="progresso">Semana</button></div>
+      <div class="card dashboard-progress-card">
+        <div class="dashboard-progress-line">
+          ${activitySeries.map((day,index)=>`
+            <span style="left:${activitySeries.length === 1 ? 0 : Math.round((index/(activitySeries.length-1))*100)}%;bottom:${Math.max(12, Math.round((day.value/maxActivity)*78))}%;"></span>
+          `).join('')}
+        </div>
+        <div class="dashboard-progress-labels">
+          ${activitySeries.map(day=>`<small>${day.label}</small>`).join('')}
+        </div>
       </div>
     </section>
 
@@ -1552,72 +1613,6 @@ function renderDashboard(){
       ` : `<div class="empty-state"><span class="emoji">🎉</span>Você concluiu todos os treinos da semana! Aproveite pra descansar.</div>`}
     </div>
 
-    <section class="dashboard-panel-grid">
-      <div class="card dashboard-panel">
-        <div class="section-title" style="margin-top:0;">Recuperação <span class="link" data-nav="sono">ver sono</span></div>
-        <div class="dashboard-recovery">
-          <div class="sleep-score dashboard-sleep-score">
-            <span>${sleep.avgHours ? Math.min(100, Math.round((sleep.avgHours / 8) * 70 + ((sleep.avgQuality||0) / 5) * 30)) : '--'}</span>
-            <small>${sleep.avgHours ? 'sono' : 'sem dados'}</small>
-          </div>
-          <p>${sleepInsight(sleep.avgHours, sleep.avgQuality, 0)}</p>
-        </div>
-      </div>
-
-      <div class="card dashboard-panel">
-        <div class="section-title" style="margin-top:0;">Metas <span class="link" data-nav="profile" data-navtab="metas">ver todas</span></div>
-        <div class="dashboard-goal-progress">
-          <strong>${goalPct}%</strong>
-          <span>${goalsDone} de ${goalsTotal} metas concluídas</span>
-        </div>
-        <div class="progress-track"><div class="progress-fill" style="width:${goalPct}%;"></div></div>
-        <div id="miniGoals"></div>
-      </div>
-    </section>
-
-    <section class="dashboard-panel-grid">
-      <div class="card dashboard-panel">
-        <div class="section-title" style="margin-top:0;">Atividade recente <span class="link" data-nav="history">ver tudo</span></div>
-        ${lastSession ? `
-          <div class="dashboard-info-row interactive" data-nav="history">
-            <div class="list-row-icon">${MUSCLE_ICONS[getTemplate(lastSession.templateId)?.muscle]||'🏋️'}</div>
-            <div>
-              <b>${lastSession.name}</b>
-              <span>${fmtDate(lastSession.date)} · ${lastSession.duration} min · ${workoutDisplayMetrics(lastSession).totalReps} reps</span>
-            </div>
-          </div>
-        ` : `<div class="empty-state compact"><span class="emoji">📋</span>Seu histórico de treinos aparece aqui.</div>`}
-        ${pr ? `
-          <div class="dashboard-info-row">
-            <div class="list-row-icon" style="background:rgba(166,111,252,.15);">🏆</div>
-            <div>
-              <b>${pr.label}</b>
-              <span>${pr.value}${pr.date?' · '+fmtDate(pr.date):''}</span>
-            </div>
-          </div>
-        ` : ''}
-      </div>
-
-      <div class="card dashboard-panel">
-        <div class="section-title" style="margin-top:0;">Próximos dados</div>
-        ${upcoming ? `
-          <div class="dashboard-info-row">
-            <div class="list-row-icon">${MUSCLE_ICONS[upcoming.template.muscle]||'🏋️'}</div>
-            <div>
-              <b>${upcoming.template.name}</b>
-              <span>${WEEKDAY_NAMES[upcoming.date.getDay()]} · próximo treino agendado</span>
-            </div>
-          </div>
-        ` : `<div class="empty-state compact"><span class="emoji">📅</span>Nada mais agendado essa semana.</div>`}
-        <div class="dashboard-info-row">
-          <div class="list-row-icon">⭐</div>
-          <div>
-            <b>Nível ${lvl.level}</b>
-            <span>${state.xp||0} XP · faltam ${lvl.next-(state.xp||0)} XP</span>
-          </div>
-        </div>
-      </div>
-    </section>
   `;
 
   renderMiniGoals();
@@ -1659,13 +1654,13 @@ function renderDashboard(){
 function renderMiniGoals(){
   const el = document.getElementById('miniGoals');
   if(!el) return;
-  const goals = state.goals.slice(0,3);
+  const goals = state.goals.slice(0,2);
   if(goals.length===0){ el.innerHTML = `<div class="empty-state"><span class="emoji">🎯</span>Nenhuma meta criada ainda.</div>`; return; }
-  el.innerHTML = goals.map(g=>`
-    <div class="list-row goal-row ${g.done?'done':''}" data-goal="${g.id}" style="cursor:pointer;">
+  el.innerHTML = `<div class="dashboard-goal-items">${goals.map(g=>`
+    <div class="dashboard-goal-pill goal-row ${g.done?'done':''}" data-goal="${g.id}">
       <div class="goal-check">${g.done?'✓':''}</div>
-      <div class="list-row-body"><div class="list-row-title">${escapeHtml(g.text)}</div></div>
-    </div>`).join('');
+      <span>${escapeHtml(g.text)}</span>
+    </div>`).join('')}</div>`;
   el.querySelectorAll('[data-goal]').forEach(row=>{
     row.addEventListener('click', ()=>{
       const g = state.goals.find(x=>x.id===row.dataset.goal);
@@ -3842,6 +3837,20 @@ function sleepDateLabel(dateKey){
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
+function formatSleepDuration(hours){
+  const value = Number(hours)||0;
+  if(!value) return '--';
+  const h = Math.floor(value);
+  const m = Math.round((value-h)*60);
+  return m ? `${h}h ${String(m).padStart(2,'0')}m` : `${h}h`;
+}
+
+function sleepSuggestionWindow(){
+  const avgTime = Number(state.user.avgWorkoutTime || 45);
+  const wakeTime = avgTime >= 60 ? '06:30' : '06:00';
+  return {bedtime:'22:00', wakeTime};
+}
+
 function sleepInsight(avgHours, avgQuality, avgEnergy){
   if(!avgHours) return 'Registre algumas noites para o FitTrack identificar seu padrão.';
   if(avgHours < 6.5) return 'Seu tempo médio está baixo. Priorize uma janela de sono mais longa nos próximos dias.';
@@ -3876,65 +3885,93 @@ function renderSono(){
   const avgEnergy = sleepAverage(recent, 'energy');
   const avgStress = sleepAverage(recent, 'stress');
   const todayLog = logs.find(log=>log.date === todayKey());
+  const previousLog = logs.find(log=>log.date !== todayKey());
+  const suggestion = sleepSuggestionWindow();
+  const sleepScore = avgHours ? Math.min(100, Math.round((avgHours / 8) * 70 + (avgQuality / 5) * 30)) : 0;
   const wrap = document.getElementById('viewWrap');
   wrap.innerHTML = `
-    <div class="view-header">
+    <div class="view-header sleep-header">
       <div class="greeting">
-        <h1>Sono</h1>
-        <p>Registre descanso, energia e sinais de recuperação.</p>
+        <h1>${sleepDateLabel(todayKey())}</h1>
+        <p>${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</p>
       </div>
     </div>
 
-    <div class="grid grid-4 sleep-kpis">
-      <div class="card stat-card"><span class="stat-label">Média 7 dias</span><span class="stat-value">${avgHours || '--'}<span style="font-size:13px;color:var(--text-dim);">h</span></span></div>
-      <div class="card stat-card"><span class="stat-label">Qualidade</span><span class="stat-value">${avgQuality || '--'}<span style="font-size:13px;color:var(--text-dim);">/5</span></span></div>
-      <div class="card stat-card"><span class="stat-label">Energia</span><span class="stat-value">${avgEnergy || '--'}<span style="font-size:13px;color:var(--text-dim);">/5</span></span></div>
-      <div class="card stat-card"><span class="stat-label">Estresse</span><span class="stat-value">${avgStress || '--'}<span style="font-size:13px;color:var(--text-dim);">/5</span></span></div>
-    </div>
-
-    <div class="grid grid-2 sleep-layout">
-      <section class="card sleep-form-card">
-        <div class="section-title" style="margin-top:0;">Registro de hoje</div>
-        <div class="field"><label>Data</label><input type="date" id="sleepDate" value="${todayLog?.date || todayKey()}"></div>
-        <div class="field-row">
-          <div class="field"><label>Fui dormir</label><input type="time" id="sleepBedtime" value="${todayLog?.bedtime || '23:00'}"></div>
-          <div class="field"><label>Acordei</label><input type="time" id="sleepWakeTime" value="${todayLog?.wakeTime || '07:00'}"></div>
-        </div>
-        <div class="field-row">
-          <div class="field"><label>Qualidade do sono</label><select id="sleepQuality">
-            ${[1,2,3,4,5].map(n=>`<option value="${n}" ${(todayLog?.quality||4)==n?'selected':''}>${n} / 5</option>`).join('')}
-          </select></div>
-          <div class="field"><label>Energia ao acordar</label><select id="sleepEnergy">
-            ${[1,2,3,4,5].map(n=>`<option value="${n}" ${(todayLog?.energy||4)==n?'selected':''}>${n} / 5</option>`).join('')}
-          </select></div>
-        </div>
-        <div class="field"><label>Estresse no dia</label><select id="sleepStress">
-          ${[1,2,3,4,5].map(n=>`<option value="${n}" ${(todayLog?.stress||2)==n?'selected':''}>${n} / 5</option>`).join('')}
-        </select></div>
-        <div class="field"><label>Observações</label><textarea id="sleepNotes" rows="3" placeholder="Ex: acordei durante a noite, muito cansaço, dormi bem...">${escapeHtml(todayLog?.notes || '')}</textarea></div>
-        <button class="btn btn-primary btn-block" id="saveSleepLog">Salvar sono</button>
-      </section>
-
-      <section class="card sleep-insight-card">
-        <div class="section-title" style="margin-top:0;">Recuperação</div>
-        <div class="sleep-score">
-          <span>${avgHours ? Math.min(100, Math.round((avgHours / 8) * 70 + (avgQuality / 5) * 30)) : '--'}</span>
-          <small>${avgHours ? 'pontuação estimada' : 'sem dados'}</small>
-        </div>
-        <p>${sleepInsight(avgHours, avgQuality, avgEnergy)}</p>
-        ${latest ? `<div class="sleep-latest">
-          <b>Último registro</b>
-          <span>${sleepDateLabel(latest.date)} · ${latest.durationHours}h · qualidade ${latest.quality}/5</span>
-        </div>` : '<div class="empty-state compact"><span class="emoji">🌙</span>Nenhuma noite registrada ainda.</div>'}
-      </section>
-    </div>
-
-    <section style="margin-top:20px;">
-      <div class="section-title">Últimos 14 dias</div>
+    <section class="sleep-hero-chart">
       <div class="card sleep-chart-card" id="sleepDurationChart"></div>
     </section>
 
-    <section style="margin-top:20px;">
+    <section class="sleep-suggestion-card">
+      <span>Sugestão de horário para dormir</span>
+      <strong>${suggestion.bedtime} - ${suggestion.wakeTime}</strong>
+    </section>
+
+    <section class="sleep-summary-grid">
+      <div class="sleep-summary-card">
+        <span>Tempo de sono</span>
+        <strong>${formatSleepDuration(todayLog?.durationHours || avgHours)}</strong>
+        <small>${todayLog ? `${todayLog.bedtime} - ${todayLog.wakeTime}` : 'Média recente'}</small>
+      </div>
+      <div class="sleep-summary-card">
+        <span>Noite anterior</span>
+        <strong>${formatSleepDuration(previousLog?.durationHours)}</strong>
+        <small>${previousLog ? `${previousLog.bedtime} - ${previousLog.wakeTime}` : 'Sem registro'}</small>
+      </div>
+    </section>
+
+    <section class="sleep-settings-section">
+      <div class="section-title">Ajustes</div>
+      <section class="card sleep-form-card">
+        <button class="sleep-setting-row" type="button" data-focus-sleep="sleepBedtime">
+          <span>${icon('moon',{size:20})} Hora de dormir</span>
+          <b>${todayLog?.bedtime || suggestion.bedtime}</b>
+        </button>
+        <button class="sleep-setting-row" type="button" data-focus-sleep="sleepWakeTime">
+          <span>${icon('clock',{size:20})} Hora de acordar</span>
+          <b>${todayLog?.wakeTime || suggestion.wakeTime}</b>
+        </button>
+        <button class="sleep-setting-row" type="button" data-focus-sleep="sleepQuality">
+          <span>${icon('check',{size:20})} Qualidade</span>
+          <b>${todayLog?.quality || 4}/5</b>
+        </button>
+        <button class="sleep-setting-row" type="button" data-focus-sleep="sleepStress">
+          <span>${icon('bell',{size:20})} Estresse</span>
+          <b>${todayLog?.stress || 2}/5</b>
+        </button>
+        <div class="sleep-form-fields">
+          <div class="field"><label>Data</label><input type="date" id="sleepDate" value="${todayLog?.date || todayKey()}"></div>
+          <div class="field-row">
+            <div class="field"><label>Fui dormir</label><input type="time" id="sleepBedtime" value="${todayLog?.bedtime || suggestion.bedtime}"></div>
+            <div class="field"><label>Acordei</label><input type="time" id="sleepWakeTime" value="${todayLog?.wakeTime || suggestion.wakeTime}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Qualidade do sono</label><select id="sleepQuality">
+              ${[1,2,3,4,5].map(n=>`<option value="${n}" ${(todayLog?.quality||4)==n?'selected':''}>${n} / 5</option>`).join('')}
+            </select></div>
+            <div class="field"><label>Energia ao acordar</label><select id="sleepEnergy">
+              ${[1,2,3,4,5].map(n=>`<option value="${n}" ${(todayLog?.energy||4)==n?'selected':''}>${n} / 5</option>`).join('')}
+            </select></div>
+          </div>
+          <div class="field"><label>Estresse no dia</label><select id="sleepStress">
+            ${[1,2,3,4,5].map(n=>`<option value="${n}" ${(todayLog?.stress||2)==n?'selected':''}>${n} / 5</option>`).join('')}
+          </select></div>
+          <div class="field"><label>Observações</label><textarea id="sleepNotes" rows="3" placeholder="Ex: acordei durante a noite, muito cansaço, dormi bem...">${escapeHtml(todayLog?.notes || '')}</textarea></div>
+        </div>
+        <button class="btn btn-primary btn-block" id="saveSleepLog">Salvar sono</button>
+      </section>
+    </section>
+
+    <section class="sleep-recovery-panel">
+      <div class="card sleep-insight-card">
+        <div>
+          <span class="stat-label">Recuperação</span>
+          <strong>${sleepScore || '--'}${sleepScore ? '%' : ''}</strong>
+        </div>
+        <p>${sleepInsight(avgHours, avgQuality, avgEnergy)}</p>
+      </div>
+    </section>
+
+    <section class="sleep-history-section">
       <div class="section-title">Histórico</div>
       <div id="sleepHistoryList"></div>
     </section>
@@ -3942,6 +3979,16 @@ function renderSono(){
 
   renderLineChart(document.getElementById('sleepDurationChart'), sleepChartData(), {height:160, ariaLabel:'Horas de sono nos últimos 14 dias'});
   renderSleepHistory();
+
+  document.querySelectorAll('[data-focus-sleep]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const target = document.getElementById(btn.dataset.focusSleep);
+      if(target){
+        target.focus();
+        if(typeof target.showPicker === 'function') target.showPicker();
+      }
+    });
+  });
 
   document.getElementById('saveSleepLog').addEventListener('click', ()=>{
     const date = document.getElementById('sleepDate').value || todayKey();
