@@ -61,5 +61,14 @@ setTimeout(function(){
 <script defer src="js/timer.js"></script>
 <script defer src="js/charts.js"></script>
 <script defer src="js/app.js"></script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('./sw.js').catch(function(error){
+      console.error('[FitTrack] service worker nao registrado', error);
+    });
+  });
+}
+</script>
 </body>
 </html> 
