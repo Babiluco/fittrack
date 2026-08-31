@@ -2413,12 +2413,16 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
 }
 
 .profile-edit-fields{
-  display:none;
+  display:block;
   margin-top:18px;
 }
 
 .profile-edit-card.is-open .profile-edit-fields{
   display:block;
+}
+
+.profile-edit-card.is-open{
+  margin-top:0;
 }
 
 @media (max-width: 520px){
