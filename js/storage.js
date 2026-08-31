@@ -62,6 +62,12 @@ function defaultState(authUser){
     bestStreak:0,                // maior sequência de dias já alcançada
     missionsClaimed:{},          // { 'YYYY-MM-DD' (início da semana): [missionId,...] }
     exerciseLoads:{},            // { exerciseId: [{date, weight, reps, notes}] }
+    syncQueue:{
+      workouts:[],               // ids/supabaseIds de treinos salvos localmente e ainda pendentes de envio
+      goals:[],                  // ids/supabaseIds de metas pendentes de envio
+      deletedGoals:[],           // ids/supabaseIds de metas removidas localmente e pendentes de exclusão remota
+      lastAttemptAt:null,
+    },
     notifications:[],
     lastSeenNotif:0,
   };
