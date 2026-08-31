@@ -5,7 +5,7 @@
    Chamadas ao Supabase e outras APIs seguem pela rede para evitar dados antigos.
    ========================================================================== */
 
-const CACHE_VERSION = 'fittrack-v1.0.1';
+const CACHE_VERSION = 'fittrack-v1.0.2';
 const APP_SHELL_CACHE = `${CACHE_VERSION}:shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}:runtime`;
 
@@ -100,6 +100,12 @@ self.addEventListener('activate', event=>{
       ))
       .then(()=>self.clients.claim())
   );
+});
+
+self.addEventListener('message', event=>{
+  if(event.data && event.data.type === 'SKIP_WAITING'){
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', event=>{
