@@ -50,6 +50,7 @@ function defaultState(authUser){
     checkins:{},                // { 'YYYY-MM-DD': moodId }
     weightLog:[],                // [{date, weight}]
     sleepLogs:[],                // [{id, date, bedtime, wakeTime, durationHours, quality, energy, stress, notes}]
+    smartbandLogs:[],            // [{id, date, steps, activeCalories, avgHeartRate, maxHeartRate, sleepHours, workouts, source}]
     measurements:[],             // [{date, weight, bodyFat, chest, waist, hip, shoulders, neck, armL, armR, forearmL, forearmR, thighL, thighR, calfL, calfR}] — medidas corporais (campos antigos arm/hips/thigh mantidos como legado)
     progressPhotos:[],           // [{id, date, angle:'front'|'side'|'back'|'custom', customLabel, weight, bodyFat, notes, image(dataURL já comprimida), hidden}]
     bodyGoals:[],                 // [{id, type, label, startValue, targetValue, unit, startDate, done}]
