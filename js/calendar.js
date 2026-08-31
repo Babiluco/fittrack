@@ -25,10 +25,19 @@ const Calendar = (function(){
 
   function fingerprint(){
     const loadsCount = Object.values(state.exerciseLoads||{}).reduce((a,l)=>a+l.length,0);
+    const scheduleFp = Object.keys(state.scheduleOverrides||{})
+      .sort()
+      .map(key=>{
+        const item = state.scheduleOverrides[key] || {};
+        return `${key}:${item.type||''}:${item.templateId||''}:${item.label||''}`;
+      })
+      .join(',');
+    const dismissedFp = Object.keys(state.rescheduleDismissed||{}).sort().join(',');
     return [
       state.history.length, loadsCount,
       Object.keys(state.completedDates||{}).length,
-      Object.keys(state.scheduleOverrides||{}).length,
+      scheduleFp,
+      dismissedFp,
     ].join('|');
   }
   function memo(key, fn){
@@ -74,6 +83,17 @@ const Calendar = (function(){
     if(destPlan.type==='workout') return false; // nunca sobrescreve outro treino já agendado
     state.scheduleOverrides[toDateKey] = {type:'workout', templateId:plan.templateId};
     state.scheduleOverrides[fromDateKey] = {type:'rest'};
+    persist();
+    return true;
+  }
+
+  function rescheduleMissedToToday(fromDateKey){
+    const plan = getDayPlan(fromDateKey);
+    const toDateKey = todayKey();
+    if(plan.type!=='workout' || fromDateKey>=toDateKey) return false;
+    state.scheduleOverrides[toDateKey] = {type:'workout', templateId:plan.templateId};
+    state.scheduleOverrides[fromDateKey] = {type:'rest'};
+    if(state.rescheduleDismissed) delete state.rescheduleDismissed[fromDateKey];
     persist();
     return true;
   }
@@ -257,7 +277,7 @@ const Calendar = (function(){
   }
 
   return {
-    DAY_TYPE_META, getDayPlan, moveWorkout, missedWorkouts, nextAvailableDay,
+    DAY_TYPE_META, getDayPlan, moveWorkout, rescheduleMissedToToday, missedWorkouts, nextAvailableDay,
     monthGrid, heatmapData, consistencyStats, weekMuscleRecovery, smartSuggestions,
   };
 })();
