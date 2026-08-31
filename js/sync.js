@@ -31,6 +31,7 @@ const SYNC = {
       ? state.syncQueue
       : {workouts:[], lastAttemptAt:null};
     state.syncQueue.workouts = Array.isArray(state.syncQueue.workouts) ? state.syncQueue.workouts : [];
+    if(!('lastError' in state.syncQueue)) state.syncQueue.lastError = null;
     return state.syncQueue;
   },
   queueWorkout(session){
@@ -57,6 +58,11 @@ const SYNC = {
       .map(key=>(state.history||[]).find(session=>session && (session.supabaseId===key || session.id===key)))
       .filter(Boolean);
   },
+  queueUnsyncedWorkouts(){
+    const localWorkouts = (state.history||[]).filter(session=>session && !session.syncedAt);
+    localWorkouts.forEach(session=>this.queueWorkout(session));
+    return localWorkouts.length;
+  },
   async flushWorkoutQueue(){
     if(!CONFIG.FEATURES.CLOUD_SYNC) return {ok:false, synced:false, skipped:true};
     if(typeof navigator !== 'undefined' && navigator.onLine === false) return {ok:false, synced:false, offline:true};
@@ -70,6 +76,7 @@ const SYNC = {
 
     let synced = 0;
     let failed = 0;
+    queue.lastError = null;
     for(const session of pending){
       const result = await this.syncWorkout(session, {fromQueue:true});
       if(result && result.syncedAt){
@@ -77,6 +84,7 @@ const SYNC = {
         this.unqueueWorkout(session);
         synced++;
       } else {
+        queue.lastError = result?.message || 'Não foi possível enviar um treino pendente.';
         failed++;
       }
     }
@@ -85,10 +93,10 @@ const SYNC = {
   },
   async syncWorkout(session, options){
     const supabase = SupabaseClient.getClient();
-    if(!supabase || !session) return {ok:false, synced:false, skipped:true};
+    if(!supabase || !session) return {ok:false, synced:false, skipped:true, message:'Cliente Supabase indisponível.'};
 
     const user = await currentAuthUser();
-    if(!user) return {ok:false, synced:false, skipped:true};
+    if(!user) return {ok:false, synced:false, skipped:true, message:'Usuário não autenticado.'};
 
     this.prepareWorkoutForSync(session);
     const metrics = workoutMetrics(session);
@@ -145,8 +153,10 @@ const SYNC = {
       return {ok:true, synced:true, syncedAt:new Date().toISOString()};
     }catch(error){
       console.error('[FitTrack Sync] syncWorkout', error);
+      const queue = this.ensureQueue();
+      queue.lastError = error?.message || 'Erro ao enviar treino ao Supabase.';
       if(!options?.fromQueue) this.queueWorkout(session);
-      return {ok:false, synced:false, message:'Treino salvo neste aparelho, mas nao enviado ao Supabase.'};
+      return {ok:false, synced:false, message:queue.lastError};
     }
   },
   async syncStatistics(){
