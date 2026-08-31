@@ -1445,6 +1445,18 @@ function dashboardSleepSummary(){
   };
 }
 
+function smartbandLogsSorted(){
+  return [...(state.smartbandLogs||[])].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+}
+
+function smartbandLogFor(dateKey){
+  return (state.smartbandLogs||[]).find(log=>log.date === dateKey) || null;
+}
+
+function latestSmartbandLog(){
+  return smartbandLogsSorted()[0] || null;
+}
+
 function dashboardBodySummary(){
   const latestMeasurement = [...(state.measurements||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];
   const latestWeight = [...(state.weightLog||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];
@@ -1510,6 +1522,12 @@ function renderDashboard(){
   const displayName = dashboardDisplayName(state.user.name);
   const activitySeries = dashboardActivitySeries();
   const maxActivity = Math.max(1, ...activitySeries.map(day=>day.value));
+  const bandToday = smartbandLogFor(todayKey());
+  const bandLatest = bandToday || latestSmartbandLog();
+  const bandSleepLabel = bandToday?.sleepHours ? `${Number(bandToday.sleepHours).toFixed(1)}h` : sleepLabel;
+  const bandActivityText = bandToday
+    ? `${Number(bandToday.steps||0).toLocaleString('pt-BR')} passos | ${Number(bandToday.activeCalories||0)} kcal | ${Number(bandToday.avgHeartRate||0)||'--'} bpm`
+    : `${wp.done}/${wp.total || 0} treinos | ${week.minutes || 0} min`;
 
   wrap.innerHTML = `
     <div class="view-header dashboard-header">
@@ -1546,11 +1564,12 @@ function renderDashboard(){
       <div class="card dashboard-activity-card">
         <div class="dashboard-card-heading">
           <div>
-            <h3>Treinos da semana</h3>
-            <strong>${wp.done}/${wp.total || 0}</strong>
+            <h3>${bandToday ? 'Smartband hoje' : 'Treinos da semana'}</h3>
+            <strong>${bandToday ? `${Number(bandToday.steps||0).toLocaleString('pt-BR')}` : `${wp.done}/${wp.total || 0}`}</strong>
           </div>
-          <span>${week.minutes || 0} min</span>
+          <span>${bandToday ? `${Number(bandToday.activeCalories||0)} kcal` : `${week.minutes || 0} min`}</span>
         </div>
+        <p class="dashboard-smartband-line">${bandActivityText}</p>
         <div class="dashboard-activity-bars">
           ${activitySeries.map(day=>`
             <div class="dashboard-activity-day ${day.active?'active':''}">
@@ -1565,13 +1584,27 @@ function renderDashboard(){
     <section class="card dashboard-sleep-card" data-nav="sono">
       <div>
         <h3>Tempo de sono</h3>
-        <strong>${sleepLabel}</strong>
-        <p>${sleep.avgHours ? 'Média dos últimos 7 dias.' : 'Registre seu sono para acompanhar recuperação.'}</p>
+        <strong>${bandSleepLabel}</strong>
+        <p>${bandToday?.sleepHours ? 'Registro da smartband de hoje.' : sleep.avgHours ? 'Média dos últimos 7 dias.' : 'Registre seu sono para acompanhar recuperação.'}</p>
       </div>
-      <div class="dashboard-sleep-ring" style="--pct:${sleep.avgHours ? Math.min(100, Math.round((sleep.avgHours/8)*100)) : 0};">
-        <span>${sleep.avgHours ? Math.min(100, Math.round((sleep.avgHours/8)*100)) : 0}%</span>
+      <div class="dashboard-sleep-ring" style="--pct:${bandToday?.sleepHours ? Math.min(100, Math.round((Number(bandToday.sleepHours)/8)*100)) : sleep.avgHours ? Math.min(100, Math.round((sleep.avgHours/8)*100)) : 0};">
+        <span>${bandToday?.sleepHours ? Math.min(100, Math.round((Number(bandToday.sleepHours)/8)*100)) : sleep.avgHours ? Math.min(100, Math.round((sleep.avgHours/8)*100)) : 0}%</span>
       </div>
     </section>
+
+    ${bandLatest ? `
+      <section class="card dashboard-band-card" data-nav="profile" data-navtab="config">
+        <div>
+          <h3>Mi Band</h3>
+          <p>Último registro: ${fmtDate(bandLatest.date)}</p>
+        </div>
+        <div class="dashboard-band-metrics">
+          <span><b>${Number(bandLatest.steps||0).toLocaleString('pt-BR')}</b><small>passos</small></span>
+          <span><b>${Number(bandLatest.activeCalories||0)}</b><small>kcal</small></span>
+          <span><b>${Number(bandLatest.avgHeartRate||0)||'--'}</b><small>bpm</small></span>
+        </div>
+      </section>
+    ` : ''}
 
     <section class="dashboard-section">
       <div class="section-title">Progresso de treinos <button class="btn btn-ghost btn-sm" type="button" data-nav="progresso">Semana</button></div>
@@ -5383,6 +5416,8 @@ function renderTabConfig(){
   const pendingDeletedGoals = Array.isArray(syncQueue.deletedGoals) ? syncQueue.deletedGoals.length : 0;
   const unsyncedLocalWorkouts = (state.history||[]).filter(session=>session && !session.syncedAt).length;
   const unsyncedGoals = (state.goals||[]).filter(goal=>goal && !goal.syncedAt).length;
+  const bandToday = smartbandLogFor(todayKey()) || {};
+  const bandLatest = latestSmartbandLog();
   const syncStatusText = unsyncedLocalWorkouts
     ? `${unsyncedLocalWorkouts} treino(s) local(is) ainda não confirmado(s) no Supabase.`
     : 'Treinos locais confirmados neste aparelho.';
@@ -5419,6 +5454,28 @@ function renderTabConfig(){
       <p style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:${canInstallPwa ? '12px' : '0'};">${installText}</p>
       ${canInstallPwa ? '<button class="btn btn-primary btn-block" id="installPwaBtn">Instalar FitTrack</button>' : ''}
     </div>
+    <div class="card smartband-config-card" style="margin-bottom:14px;">
+      <h4 style="margin-bottom:10px;font-size:13px;">Smartband e Apple Saúde</h4>
+      <p style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">
+        No iPhone, sincronize a Mi Band no Mi Fitness e ative Apple Saúde em Perfil > Dados de terceiros > Saúde.
+        O FitTrack PWA não lê o Apple Saúde automaticamente, mas já pode guardar esses dados para resumo e histórico.
+      </p>
+      ${bandLatest ? `<p style="font-size:11.5px;color:var(--text-faint);line-height:1.5;margin-bottom:12px;">Último registro: ${fmtDate(bandLatest.date)} · ${Number(bandLatest.steps||0).toLocaleString('pt-BR')} passos · ${Number(bandLatest.activeCalories||0)} kcal</p>` : ''}
+      <div class="field-row">
+        <div class="field"><label>Data</label><input type="date" id="bandDate" value="${bandToday.date || todayKey()}"></div>
+        <div class="field"><label>Passos</label><input type="number" min="0" id="bandSteps" value="${bandToday.steps || ''}" placeholder="Ex: 8500"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Calorias ativas</label><input type="number" min="0" id="bandCalories" value="${bandToday.activeCalories || ''}" placeholder="Ex: 420"></div>
+        <div class="field"><label>Sono (horas)</label><input type="number" min="0" max="24" step="0.1" id="bandSleep" value="${bandToday.sleepHours || ''}" placeholder="Ex: 7.5"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Batimento médio</label><input type="number" min="0" id="bandAvgHr" value="${bandToday.avgHeartRate || ''}" placeholder="Ex: 78"></div>
+        <div class="field"><label>Batimento máximo</label><input type="number" min="0" id="bandMaxHr" value="${bandToday.maxHeartRate || ''}" placeholder="Ex: 156"></div>
+      </div>
+      <div class="field"><label>Treinos detectados</label><input type="number" min="0" id="bandWorkouts" value="${bandToday.workouts || ''}" placeholder="Ex: 1"></div>
+      <button class="btn btn-primary btn-block" id="saveSmartbandBtn">Salvar dados da smartband</button>
+    </div>
     <div class="card" style="margin-bottom:14px;">
       <h4 style="margin-bottom:10px;font-size:13px;">Backup de dados</h4>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
@@ -5444,6 +5501,49 @@ function renderTabConfig(){
   });
   document.getElementById('cfgThemeToggle').addEventListener('click', ()=>{ toggleTheme(); renderTabConfig(); });
   document.getElementById('openOnboardingBtn').addEventListener('click', ()=>navigate('onboarding'));
+  document.getElementById('saveSmartbandBtn')?.addEventListener('click', ()=>{
+    const date = document.getElementById('bandDate')?.value || todayKey();
+    const entry = {
+      id: smartbandLogFor(date)?.id || cryptoId(),
+      date,
+      steps: Number(document.getElementById('bandSteps')?.value)||0,
+      activeCalories: Number(document.getElementById('bandCalories')?.value)||0,
+      sleepHours: Number(document.getElementById('bandSleep')?.value)||0,
+      avgHeartRate: Number(document.getElementById('bandAvgHr')?.value)||0,
+      maxHeartRate: Number(document.getElementById('bandMaxHr')?.value)||0,
+      workouts: Number(document.getElementById('bandWorkouts')?.value)||0,
+      source:'Mi Band / Apple Saúde',
+      updatedAt:Date.now(),
+    };
+    state.smartbandLogs = state.smartbandLogs || [];
+    const index = state.smartbandLogs.findIndex(log=>log.date === date);
+    if(index >= 0) state.smartbandLogs[index] = Object.assign({}, state.smartbandLogs[index], entry);
+    else state.smartbandLogs.push(entry);
+
+    if(entry.sleepHours > 0){
+      state.sleepLogs = state.sleepLogs || [];
+      const existingSleep = state.sleepLogs.find(log=>log.date === date && log.source === 'Mi Band / Apple Saúde');
+      const sleepEntry = {
+        id: existingSleep?.id || cryptoId(),
+        date,
+        bedtime:'',
+        wakeTime:'',
+        durationHours:entry.sleepHours,
+        quality:existingSleep?.quality || 4,
+        energy:existingSleep?.energy || 4,
+        stress:existingSleep?.stress || 2,
+        notes:existingSleep?.notes || 'Importado da Mi Band / Apple Saúde.',
+        source:'Mi Band / Apple Saúde',
+      };
+      const sleepIndex = state.sleepLogs.findIndex(log=>log.id === sleepEntry.id);
+      if(sleepIndex >= 0) state.sleepLogs[sleepIndex] = sleepEntry;
+      else state.sleepLogs.push(sleepEntry);
+    }
+
+    persist();
+    showToast('Smartband salva', 'Os dados foram adicionados ao resumo do FitTrack.', '⌚');
+    renderTabConfig();
+  });
   document.getElementById('installPwaBtn')?.addEventListener('click', async ()=>{
     const button = document.getElementById('installPwaBtn');
     button.disabled = true;
