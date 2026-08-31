@@ -2127,7 +2127,7 @@ function renderAgenda(){
     openDayDetail(todayKey(today));
   });
   document.querySelectorAll('[data-today-ex]').forEach(row=>{
-    row.addEventListener('click', ()=>openExerciseDetail(row.dataset.todayEx));
+    row.addEventListener('click', ()=>openExerciseModal(row.dataset.todayEx));
   });
 
   document.querySelectorAll('[data-day],[data-daydetail]').forEach(elm=>{
@@ -3689,6 +3689,14 @@ function splitExerciseDescription(desc){
   return {description, similarTitle, similarText:match[2].trim()};
 }
 
+function splitExerciseSteps(text){
+  return String(text || '')
+    .split(/\.\s+/)
+    .map(step=>step.trim().replace(/\.$/, ''))
+    .filter(Boolean)
+    .map(step=>`${step}.`);
+}
+
 function openExerciseModal(exId){
   const e = findExercise(exId) || {
     id:exId,
@@ -3702,6 +3710,8 @@ function openExerciseModal(exId){
   const stats = WorkoutProgression.getExerciseStats(state, exId);
   const favorite = isFavoriteExercise(exId);
   const detailText = splitExerciseDescription(e.desc);
+  const executionSteps = splitExerciseSteps(e.execution || 'Sem instruções salvas para este exercício.');
+  const careTips = splitExerciseSteps(e.mistakes || 'Sem observações salvas para este exercício.');
 
   openModal(`
     <div class="exercise-detail">
@@ -3712,23 +3722,33 @@ function openExerciseModal(exId){
       <div class="exercise-detail-header">
         <div>
           <h2>${escapeHtml(e.name)}</h2>
-          <span class="muscle-tag">${MUSCLE_LABELS[e.muscle] || e.muscle || 'Exercício'}</span>
+          <p>${escapeHtml(MUSCLE_LABELS[e.muscle] || e.muscle || 'Exercício')} | ${stats.sessionsCount || 0} sessão${stats.sessionsCount === 1 ? '' : 's'}</p>
         </div>
       </div>
 
       <div class="exercise-detail-section intro">
-        <h4>Descrição</h4>
+        <h4>Descrição do exercício</h4>
         <p>${escapeHtml(detailText.description || 'Sem descrição cadastrada.')}</p>
       </div>
 
-      <div class="exercise-detail-section execution">
-        <h4>Execução correta</h4>
-        <p>${escapeHtml(e.execution || 'Sem instruções salvas para este exercício.')}</p>
+      <div class="exercise-detail-section execution exercise-step-section">
+        <h4>Como realizar o exercício</h4>
+        <div class="exercise-step-list">
+          ${executionSteps.map((step,idx)=>`
+            <div class="exercise-step">
+              <span class="exercise-step-number">${String(idx+1).padStart(2,'0')}</span>
+              <span class="exercise-step-dot"></span>
+              <p>${escapeHtml(step)}</p>
+            </div>
+          `).join('')}
+        </div>
       </div>
 
-      <div class="exercise-detail-section care">
-        <h4>Dicas e cuidados</h4>
-        <p>${escapeHtml(e.mistakes || 'Sem observações salvas para este exercício.')}</p>
+      <div class="exercise-detail-section care exercise-tips-section">
+        <h4>Dicas</h4>
+        <ul class="exercise-tip-list">
+          ${careTips.map(tip=>`<li>${escapeHtml(tip)}</li>`).join('')}
+        </ul>
       </div>
 
       ${detailText.similarText ? `
@@ -3738,15 +3758,9 @@ function openExerciseModal(exId){
         </div>
       ` : ''}
 
-      <div class="exercise-detail-stats">
-        <div>
-          <span>Sessões</span>
-          <b>${stats.sessionsCount || 0}</b>
-        </div>
-        <div>
-          <span>Último treino</span>
-          <b>${stats.lastPerformed ? fmtDate(stats.lastPerformed) : 'Primeira vez'}</b>
-        </div>
+      <div class="exercise-detail-section muscles">
+        <h4>Músculos Trabalhados</h4>
+        <p>${escapeHtml(e.name)} trabalha principalmente ${escapeHtml((MUSCLE_LABELS[e.muscle] || e.muscle || 'o grupo muscular cadastrado').toLowerCase())}. ${detailText.similarText ? 'As alternativas listadas acima mantêm um padrão de movimento parecido.' : 'Use a execução controlada para manter o foco no músculo-alvo.'}</p>
       </div>
 
       <button class="btn btn-primary btn-block" id="viewAnalyticsBtn">Ver evolução</button>
