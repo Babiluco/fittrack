@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>FitTrack — Sem conexão</title>
+<meta name="theme-color" content="#0A0A0E">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0a0a0e;
+  --panel:rgba(18,20,32,.82);
+  --border:rgba(255,255,255,.14);
+  --text:#fff;
+  --muted:rgba(255,255,255,.68);
+  --accent:#3355ff;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  min-height:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:calc(24px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at top right, rgba(51,85,255,.18), transparent 36%),
+    linear-gradient(145deg, #07070b 0%, #101226 100%);
+  color:var(--text);
+  font-family:Poppins, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.offline-card{
+  width:100%;
+  max-width:430px;
+  padding:26px;
+  border:1px solid var(--border);
+  border-radius:24px;
+  background:var(--panel);
+  box-shadow:0 24px 70px rgba(0,0,0,.38);
+  backdrop-filter:blur(18px) saturate(1.25);
+  -webkit-backdrop-filter:blur(18px) saturate(1.25);
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:28px;
+}
+.brand img{
+  width:52px;
+  height:52px;
+  border-radius:16px;
+}
+.brand strong{
+  display:block;
+  font-size:20px;
+  line-height:1.1;
+}
+.brand span{
+  display:block;
+  margin-top:3px;
+  color:var(--muted);
+  font-size:13px;
+  font-weight:700;
+}
+h1{
+  margin:0 0 10px;
+  font-size:clamp(28px, 8vw, 38px);
+  line-height:1.08;
+  letter-spacing:0;
+}
+p{
+  margin:0;
+  color:var(--muted);
+  font-size:15px;
+  line-height:1.55;
+}
+.actions{
+  display:grid;
+  gap:10px;
+  margin-top:24px;
+}
+button,a{
+  min-height:52px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0 18px;
+  border-radius:999px;
+  font:800 15px/1 Poppins, system-ui, sans-serif;
+  text-decoration:none;
+}
+button{
+  border:0;
+  background:var(--accent);
+  color:#fff;
+  box-shadow:0 14px 30px rgba(51,85,255,.32);
+}
+a{
+  border:1px solid var(--border);
+  color:#fff;
+  background:rgba(255,255,255,.06);
+}
+</style>
+</head>
+<body>
+<main class="offline-card">
+  <div class="brand">
+    <img src="icons/icon-192.png" alt="">
+    <div>
+      <strong>FitTrack</strong>
+      <span>Modo offline</span>
+    </div>
+  </div>
+  <h1>Sem conexão</h1>
+  <p>Não foi possível carregar a versão online agora. Seus dados locais continuam salvos neste aparelho. Tente novamente quando a conexão voltar.</p>
+  <div class="actions">
+    <button type="button" onclick="window.location.reload()">Tentar novamente</button>
+    <a href="./">Voltar ao FitTrack</a>
+  </div>
+</main>
+</body>
+</html>
