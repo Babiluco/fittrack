@@ -362,7 +362,7 @@ function renderAuthenticatedApp(){
   maybeGenerateNotifications();
   checkForRecoverableSession();
   setupSyncQueueListeners();
-  retryPendingWorkoutSync({silent:true});
+  syncCloudWorkouts({silent:true});
   authAppRendered = true;
 }
 
@@ -413,7 +413,7 @@ function setupAuthStateListener(){
       applyTheme();
       if(!authAppRendered) renderAuthenticatedApp();
       else if(currentView==='profile') renderProfile();
-      retryPendingWorkoutSync({silent:true});
+      syncCloudWorkouts({silent:true});
       return;
     }
     if(event==='SIGNED_OUT'){
@@ -446,6 +446,23 @@ async function retryPendingWorkoutSync(options){
     showToast('Treinos sincronizados', `${result.syncedCount} treino(s) pendente(s) foram enviados.`, '☁️');
   }
   return result;
+}
+
+async function syncCloudWorkouts(options){
+  const queueResult = await retryPendingWorkoutSync({silent:true});
+  if(!CONFIG.FEATURES.CLOUD_SYNC || typeof SYNC === 'undefined' || typeof SYNC.importWorkoutsFromSupabase !== 'function') return queueResult;
+  if(typeof navigator !== 'undefined' && navigator.onLine === false) return queueResult;
+  const importResult = await SYNC.importWorkoutsFromSupabase();
+  if(importResult?.importedCount){
+    if(!options?.silent) showToast('Histórico atualizado', `${importResult.importedCount} treino(s) baixado(s) do Supabase.`, '☁️');
+    if(currentView === 'dashboard') renderDashboard();
+    if(currentView === 'progresso') renderProgresso();
+    if(currentView === 'treino') renderTreino();
+    if(currentView === 'profile' && currentProfileTab === 'config') renderTabConfig();
+  } else if(queueResult?.syncedCount && !options?.silent){
+    showToast('Treinos sincronizados', `${queueResult.syncedCount} treino(s) enviados ao Supabase.`, '☁️');
+  }
+  return Object.assign({}, queueResult||{}, importResult||{});
 }
 
 function isPasswordRecoveryUrl(){
@@ -4936,8 +4953,10 @@ function renderTabConfig(){
     if(typeof SYNC !== 'undefined' && typeof SYNC.queueUnsyncedWorkouts === 'function'){
       SYNC.queueUnsyncedWorkouts();
     }
-    const result = await retryPendingWorkoutSync({silent:true});
-    if(result?.syncedCount){
+    const result = await syncCloudWorkouts({silent:true});
+    if(result?.importedCount){
+      showToast('Histórico atualizado', `${result.importedCount} treino(s) baixado(s) do Supabase.`, '☁️');
+    } else if(result?.syncedCount){
       showToast('Treinos sincronizados', `${result.syncedCount} treino(s) enviados ao Supabase.`, '☁️');
     } else if(result?.failedCount){
       showToast('Sincronização pendente', 'O treino ficou salvo no aparelho. Tente novamente com internet.', '⚠️');
