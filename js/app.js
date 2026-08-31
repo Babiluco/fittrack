@@ -854,6 +854,7 @@ function applyTheme(){
 const NAV_ITEMS = [
   {id:'dashboard', label:'Início', icon:'home'},
   {id:'treino', label:'Treino', icon:'dumbbell'},
+  {id:'sono', label:'Sono', icon:'moon'},
   {id:'progresso', label:'Progresso', icon:'trending-up'},
   {id:'profile', label:'Perfil', icon:'user'},
 ];
@@ -929,6 +930,7 @@ function navigate(view, subTab){
     onboarding: renderOnboarding,
     dashboard: renderDashboard,
     treino: renderTreino,
+    sono: renderSono,
     progresso: renderProgresso,
     profile: renderProfile,
   };
@@ -4925,6 +4927,17 @@ function lastWeekSummary(){
 
 function renderTabConfig(){
   const c = document.getElementById('profileTabContent');
+  const pwa = window.FitTrackPWA;
+  const isInstalled = !!pwa?.isStandalone?.();
+  const canInstallPwa = !!pwa?.canInstall?.();
+  const isIOSPwa = !!pwa?.isIOS?.();
+  const installText = isInstalled
+    ? 'FitTrack já está instalado neste aparelho.'
+    : isIOSPwa
+      ? 'No iPhone, toque em compartilhar no navegador e escolha “Adicionar à Tela de Início”.'
+      : canInstallPwa
+        ? 'Instale o FitTrack para abrir em tela cheia e usar como aplicativo.'
+        : 'Quando o navegador liberar a instalação, o botão aparecerá aqui.';
   const syncQueue = state.syncQueue || {};
   const pendingWorkouts = Array.isArray(syncQueue.workouts) ? syncQueue.workouts.length : 0;
   const pendingGoals = Array.isArray(syncQueue.goals) ? syncQueue.goals.length : 0;
@@ -4963,6 +4976,11 @@ function renderTabConfig(){
       <div class="field"><label>Idioma</label><select disabled><option>Português (Brasil)</option></select></div>
     </div>
     <div class="card" style="margin-bottom:14px;">
+      <h4 style="margin-bottom:10px;font-size:13px;">Aplicativo</h4>
+      <p style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:${canInstallPwa ? '12px' : '0'};">${installText}</p>
+      ${canInstallPwa ? '<button class="btn btn-primary btn-block" id="installPwaBtn">Instalar FitTrack</button>' : ''}
+    </div>
+    <div class="card" style="margin-bottom:14px;">
       <h4 style="margin-bottom:10px;font-size:13px;">Backup de dados</h4>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         <button class="btn btn-ghost" id="exportBtn">⬇️ Exportar histórico</button>
@@ -4987,6 +5005,18 @@ function renderTabConfig(){
   });
   document.getElementById('cfgThemeToggle').addEventListener('click', ()=>{ toggleTheme(); renderTabConfig(); });
   document.getElementById('openOnboardingBtn').addEventListener('click', ()=>navigate('onboarding'));
+  document.getElementById('installPwaBtn')?.addEventListener('click', async ()=>{
+    const button = document.getElementById('installPwaBtn');
+    button.disabled = true;
+    button.textContent = 'Abrindo instalação...';
+    const result = await window.FitTrackPWA?.install?.();
+    if(result?.ok){
+      showToast('Instalação iniciada', 'Confirme no navegador para adicionar o FitTrack.', '📲');
+    } else {
+      showToast('Instalação indisponível', 'Use o menu do navegador para adicionar o app à tela inicial.', 'ℹ️');
+    }
+    renderTabConfig();
+  });
   document.getElementById('syncNowBtn').addEventListener('click', async ()=>{
     const button = document.getElementById('syncNowBtn');
     button.disabled = true;
@@ -5101,3 +5131,10 @@ function closeModal(){
    ====================================================================== */
 
 document.addEventListener('DOMContentLoaded', boot);
+window.addEventListener('fittrack:pwa-ready', ()=>{
+  if(currentView === 'profile' && currentProfileTab === 'config') renderTabConfig();
+});
+window.addEventListener('fittrack:pwa-installed', ()=>{
+  showToast('FitTrack instalado', 'O app já pode ser aberto pela tela inicial.', '📲');
+  if(currentView === 'profile' && currentProfileTab === 'config') renderTabConfig();
+});
