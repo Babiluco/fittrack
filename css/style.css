@@ -2440,6 +2440,32 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
   min-height:54px;
 }
 
+.smartband-config-card{
+  overflow:hidden;
+}
+
+.smartband-config-card .field,
+.smartband-config-card .field-row,
+.smartband-config-card input{
+  min-width:0;
+  max-width:100%;
+}
+
+.smartband-config-card input{
+  box-sizing:border-box;
+}
+
+.smartband-config-card input[type="date"]{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  padding-left:14px;
+  padding-right:14px;
+  font-size:14px;
+  -webkit-appearance:none;
+  appearance:none;
+}
+
 @media (max-width: 720px) {
   #profileTabContent > .card {
     padding:22px 18px;
@@ -2473,6 +2499,12 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
     padding:17px 18px;
     border-radius:17px;
     font-size:15.5px;
+  }
+
+  .smartband-config-card input[type="date"]{
+    padding-left:12px;
+    padding-right:12px;
+    font-size:13.5px;
   }
 }
 
