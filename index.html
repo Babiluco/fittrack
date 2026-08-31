@@ -77,6 +77,43 @@
 window.addEventListener('error', function(event){
   console.error('[FitTrack] erro de carregamento', event.error || event.message);
 });
+window.FitTrackPWA = (function(){
+  var deferredPrompt = null;
+
+  function isStandalone(){
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  }
+
+  function isIOS(){
+    return /iphone|ipad|ipod/i.test(window.navigator.userAgent || '');
+  }
+
+  window.addEventListener('beforeinstallprompt', function(event){
+    event.preventDefault();
+    deferredPrompt = event;
+    window.dispatchEvent(new CustomEvent('fittrack:pwa-ready'));
+  });
+
+  window.addEventListener('appinstalled', function(){
+    deferredPrompt = null;
+    window.dispatchEvent(new CustomEvent('fittrack:pwa-installed'));
+  });
+
+  return {
+    isStandalone: isStandalone,
+    isIOS: isIOS,
+    canInstall: function(){
+      return !!deferredPrompt && !isStandalone();
+    },
+    install: async function(){
+      if(!deferredPrompt || isStandalone()) return {ok:false, reason:'unavailable'};
+      deferredPrompt.prompt();
+      var result = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      return {ok:result.outcome === 'accepted', outcome:result.outcome};
+    }
+  };
+})();
 setTimeout(function(){
   var loader = document.getElementById('loader');
   var app = document.getElementById('app');
