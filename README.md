@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/31663495/README.md)
+[README.md](https://github.com/user-attachments/files/31696906/README.md)
 # FitTrack — Treinos e Progresso
 
 FitTrack é um aplicativo pessoal de acompanhamento de treinos, progresso corporal, metas, sono e rotina fitness. Ele funciona como PWA, pode ser instalado na tela inicial do celular e mantém os dados salvos localmente, com sincronização parcial via Supabase quando a conta está conectada.
@@ -29,6 +29,7 @@ offline.html        Tela exibida quando o app não consegue carregar online
 manifest.json       Configuração do PWA
 sw.js               Service worker e controle de cache
 favicon.ico         Ícone da aba do navegador
+ANDROID_HEALTH_CONNECT.md  Guia da ponte Android/Health Connect
 
 css/
   style.css         Estilos, responsividade, temas e layout
@@ -74,6 +75,7 @@ js/
 - Registro de peso, medidas e fotos de progresso.
 - Página de sono com registros manuais.
 - Área de smartband/Apple Saúde para cadastrar manualmente dados da Mi Band.
+- Ponte JavaScript pronta para receber dados do Health Connect em app Android.
 - Exportação e importação de histórico em JSON.
 - Modo claro e modo escuro.
 - Funcionamento offline básico via PWA.
@@ -105,7 +107,13 @@ Se a internet falhar ou o Supabase recusar algum envio, o app mantém os dados l
 
 ## Dados da Mi Band e Apple Saúde
 
-No iPhone, o FitTrack PWA não consegue ler diretamente o Apple Saúde/HealthKit. Essa é uma limitação do iOS para sites e PWAs.
+No navegador, o FitTrack PWA não consegue ler diretamente Apple Saúde/HealthKit nem Health Connect. Essa leitura exige uma camada nativa.
+
+No Android, o caminho recomendado é:
+
+```text
+Mi Band > Mi Fitness ou Zepp Life > Health Connect > FitTrack Android
+```
 
 Fluxo esperado no iPhone:
 
@@ -126,6 +134,8 @@ Esses dados aparecem no resumo da Home e, quando houver horas de sono, também e
 
 Para integração automática com Apple Saúde, o próximo passo técnico é transformar o projeto em app iOS usando uma camada nativa, como Capacitor, e integrar HealthKit.
 
+Para integração automática no Android, veja `ANDROID_HEALTH_CONNECT.md`. O app web já expõe `window.FitTrackHealthConnect.importDailySummary(...)` para receber passos, calorias, sono, batimentos e treinos da camada Android.
+
 ## PWA e cache
 
 O app possui:
@@ -141,7 +151,7 @@ Sempre que alterar arquivos importantes como `index.html`, `css/style.css` ou ar
 Exemplo:
 
 ```js
-const CACHE_VERSION = 'fittrack-v1.0.29';
+const CACHE_VERSION = 'fittrack-v1.0.32';
 ```
 
 ## Dados locais
@@ -170,7 +180,7 @@ Ao alterar o projeto:
 Versão atual de cache:
 
 ```text
-fittrack-v1.0.29
+fittrack-v1.0.32
 ```
 
 Estado das principais áreas:
@@ -179,7 +189,7 @@ Estado das principais áreas:
 - Perfil: edição de dados pessoais disponível diretamente.
 - Treino do dia: imagem maior, informações do treino e lista de exercícios limpa.
 - Sono: registro manual e visualização no app.
-- Smartband: cadastro manual preparado para futura integração iOS.
+- Smartband: cadastro manual e ponte preparada para futura integração Android via Health Connect.
 - Supabase: perfil, treinos e metas com sincronização.
 
 ## Próximos passos recomendados
