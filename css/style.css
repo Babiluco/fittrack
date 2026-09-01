@@ -3292,6 +3292,119 @@ h1,h2,h3,h4,p,span,strong,b,small,label,
   }
 }
 
+/* Refinamento mobile do detalhe do exercício: escala mais próxima do mockup */
+@media (max-width: 520px) {
+  .modal:has(.exercise-detail){
+    width:calc(100vw - 18px);
+    max-height:min(88vh, calc(100dvh - 54px));
+    padding:18px;
+    border-radius:24px;
+  }
+
+  .modal:has(.exercise-detail) .modal-handle{
+    margin-bottom:14px;
+  }
+
+  .modal:has(.exercise-detail) .modal-close{
+    top:14px;
+    right:14px;
+    width:42px;
+    height:42px;
+  }
+
+  .modal .exercise-detail{
+    gap:20px;
+  }
+
+  .modal .exercise-detail-media{
+    aspect-ratio:16 / 10;
+    max-height:250px;
+    border-radius:18px;
+  }
+
+  .modal .exercise-detail-media .exercise-photo{
+    object-fit:cover;
+  }
+
+  .modal .exercise-detail-header h2{
+    padding-right:46px;
+    font-size:24px;
+    line-height:1.12;
+  }
+
+  .modal .exercise-detail-header p{
+    font-size:13px;
+  }
+
+  .modal .exercise-detail-section h4{
+    margin-bottom:10px;
+    font-size:20px;
+    line-height:1.18;
+  }
+
+  .modal .exercise-detail-section p,
+  .modal .exercise-tip-list li{
+    font-size:13.5px;
+    line-height:1.55;
+  }
+
+  .modal .exercise-step{
+    grid-template-columns:25px 16px minmax(0,1fr);
+    gap:8px;
+    padding-bottom:12px;
+  }
+
+  .modal .exercise-step:not(:last-child)::after{
+    left:33px;
+    top:21px;
+  }
+
+  .modal .exercise-step-number{
+    font-size:13px;
+    line-height:16px;
+  }
+
+  .modal .exercise-step-dot{
+    width:16px;
+    height:16px;
+  }
+
+  .modal .exercise-tip-list{
+    gap:10px;
+  }
+
+  .modal .exercise-tip-list li{
+    padding-left:24px;
+  }
+
+  .modal .exercise-tip-list li::before{
+    width:10px;
+    height:10px;
+  }
+
+  .modal .exercise-detail .btn-block{
+    min-height:54px;
+  }
+}
+
+@media (max-width: 380px) {
+  .modal:has(.exercise-detail){
+    padding:16px;
+  }
+
+  .modal .exercise-detail-media{
+    max-height:220px;
+  }
+
+  .modal .exercise-detail-header h2{
+    font-size:22px;
+  }
+
+  .modal .exercise-detail-section h4{
+    font-size:18px;
+  }
+}
+
 /* Ajuste final da tela Editar treino: miniaturas e formularios sem colisao */
 #editorExerciseList {
   gap: 14px;
