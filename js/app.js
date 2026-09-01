@@ -1457,6 +1457,80 @@ function latestSmartbandLog(){
   return smartbandLogsSorted()[0] || null;
 }
 
+function normalizeSmartbandEntry(raw){
+  const source = raw?.source || 'Mi Band / Health Connect';
+  const date = raw?.date || todayKey();
+  return {
+    id: smartbandLogFor(date)?.id || raw?.id || cryptoId(),
+    date,
+    steps: Number(raw?.steps)||0,
+    activeCalories: Number(raw?.activeCalories ?? raw?.calories)||0,
+    totalCalories: Number(raw?.totalCalories)||0,
+    sleepHours: Number(raw?.sleepHours)||0,
+    avgHeartRate: Number(raw?.avgHeartRate)||0,
+    maxHeartRate: Number(raw?.maxHeartRate)||0,
+    workouts: Number(raw?.workouts)||0,
+    workoutMinutes: Number(raw?.workoutMinutes)||0,
+    source,
+    updatedAt: raw?.updatedAt || Date.now(),
+  };
+}
+
+function upsertSmartbandEntry(raw){
+  const entry = normalizeSmartbandEntry(raw);
+  state.smartbandLogs = state.smartbandLogs || [];
+  const index = state.smartbandLogs.findIndex(log=>log.date === entry.date);
+  if(index >= 0) state.smartbandLogs[index] = Object.assign({}, state.smartbandLogs[index], entry);
+  else state.smartbandLogs.push(entry);
+
+  if(entry.sleepHours > 0){
+    state.sleepLogs = state.sleepLogs || [];
+    const existingSleep = state.sleepLogs.find(log=>log.date === entry.date && log.source === entry.source);
+    const sleepEntry = {
+      id: existingSleep?.id || cryptoId(),
+      date:entry.date,
+      bedtime:'',
+      wakeTime:'',
+      durationHours:entry.sleepHours,
+      quality:existingSleep?.quality || 4,
+      energy:existingSleep?.energy || 4,
+      stress:existingSleep?.stress || 2,
+      notes:existingSleep?.notes || `Importado de ${entry.source}.`,
+      source:entry.source,
+    };
+    const sleepIndex = state.sleepLogs.findIndex(log=>log.id === sleepEntry.id);
+    if(sleepIndex >= 0) state.sleepLogs[sleepIndex] = sleepEntry;
+    else state.sleepLogs.push(sleepEntry);
+  }
+
+  persist();
+  return entry;
+}
+
+function importSmartbandEntries(records){
+  const list = Array.isArray(records) ? records : [records];
+  const imported = list.filter(Boolean).map(upsertSmartbandEntry);
+  if(currentView === 'dashboard') renderDashboard();
+  if(currentView === 'sono') renderSono();
+  if(currentView === 'profile' && currentProfileTab === 'config') renderTabConfig();
+  return imported;
+}
+
+window.FitTrackHealthConnect = {
+  importDailySummary(payload){
+    const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    const imported = importSmartbandEntries(data);
+    showToast('Health Connect sincronizado', `${imported.length} dia(s) importado(s).`, '⌚');
+    return {ok:true, imported:imported.length};
+  },
+  importDailySummaries(payload){
+    const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    const imported = importSmartbandEntries(data);
+    showToast('Health Connect sincronizado', `${imported.length} registro(s) importado(s).`, '⌚');
+    return {ok:true, imported:imported.length};
+  },
+};
+
 function dashboardBodySummary(){
   const latestMeasurement = [...(state.measurements||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];
   const latestWeight = [...(state.weightLog||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];
@@ -5432,6 +5506,8 @@ function renderTabConfig(){
   const unsyncedGoals = (state.goals||[]).filter(goal=>goal && !goal.syncedAt).length;
   const bandToday = smartbandLogFor(todayKey()) || {};
   const bandLatest = latestSmartbandLog();
+  const androidBridge = typeof window !== 'undefined' ? (window.AndroidHealthConnect || window.FitTrackAndroidHealth || null) : null;
+  const canSyncAndroid = !!androidBridge?.syncDailySummary;
   const syncStatusText = unsyncedLocalWorkouts
     ? `${unsyncedLocalWorkouts} treino(s) local(is) ainda não confirmado(s) no Supabase.`
     : 'Treinos locais confirmados neste aparelho.';
@@ -5469,12 +5545,13 @@ function renderTabConfig(){
       ${canInstallPwa ? '<button class="btn btn-primary btn-block" id="installPwaBtn">Instalar FitTrack</button>' : ''}
     </div>
     <div class="card smartband-config-card" style="margin-bottom:14px;">
-      <h4 style="margin-bottom:10px;font-size:13px;">Smartband e Apple Saúde</h4>
+      <h4 style="margin-bottom:10px;font-size:13px;">Smartband, Android e Apple Saúde</h4>
       <p style="font-size:12px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">
-        No iPhone, sincronize a Mi Band no Mi Fitness e ative Apple Saúde em Perfil > Dados de terceiros > Saúde.
-        O FitTrack PWA não lê o Apple Saúde automaticamente, mas já pode guardar esses dados para resumo e histórico.
+        Android: use Mi Fitness/Zepp Life conectado ao Health Connect. iPhone: use Mi Fitness com Apple Saúde.
+        A versão web guarda os dados; a sincronização automática depende do app Android nativo.
       </p>
       ${bandLatest ? `<p style="font-size:11.5px;color:var(--text-faint);line-height:1.5;margin-bottom:12px;">Último registro: ${fmtDate(bandLatest.date)} · ${Number(bandLatest.steps||0).toLocaleString('pt-BR')} passos · ${Number(bandLatest.activeCalories||0)} kcal</p>` : ''}
+      <button class="btn ${canSyncAndroid?'btn-primary':'btn-ghost'} btn-block" id="syncAndroidHealthBtn" ${canSyncAndroid?'':'disabled'} style="margin-bottom:12px;">${canSyncAndroid?'Sincronizar com Health Connect':'Health Connect disponível no app Android'}</button>
       <div class="field-row">
         <div class="field"><label>Data</label><input type="date" id="bandDate" value="${bandToday.date || todayKey()}"></div>
         <div class="field"><label>Passos</label><input type="number" min="0" id="bandSteps" value="${bandToday.steps || ''}" placeholder="Ex: 8500"></div>
@@ -5515,10 +5592,26 @@ function renderTabConfig(){
   });
   document.getElementById('cfgThemeToggle').addEventListener('click', ()=>{ toggleTheme(); renderTabConfig(); });
   document.getElementById('openOnboardingBtn').addEventListener('click', ()=>navigate('onboarding'));
+  document.getElementById('syncAndroidHealthBtn')?.addEventListener('click', async ()=>{
+    if(!canSyncAndroid){
+      showToast('App Android necessário', 'No navegador, o Health Connect não fica disponível para leitura automática.', 'ℹ️');
+      return;
+    }
+    const button = document.getElementById('syncAndroidHealthBtn');
+    button.disabled = true;
+    button.textContent = 'Sincronizando...';
+    try{
+      const response = await androidBridge.syncDailySummary(todayKey());
+      if(response) window.FitTrackHealthConnect.importDailySummary(response);
+    }catch(err){
+      showToast('Falha na sincronização', err.message || 'Não foi possível ler o Health Connect.', '⚠️');
+    }finally{
+      renderTabConfig();
+    }
+  });
   document.getElementById('saveSmartbandBtn')?.addEventListener('click', ()=>{
     const date = document.getElementById('bandDate')?.value || todayKey();
-    const entry = {
-      id: smartbandLogFor(date)?.id || cryptoId(),
+    upsertSmartbandEntry({
       date,
       steps: Number(document.getElementById('bandSteps')?.value)||0,
       activeCalories: Number(document.getElementById('bandCalories')?.value)||0,
@@ -5527,34 +5620,7 @@ function renderTabConfig(){
       maxHeartRate: Number(document.getElementById('bandMaxHr')?.value)||0,
       workouts: Number(document.getElementById('bandWorkouts')?.value)||0,
       source:'Mi Band / Apple Saúde',
-      updatedAt:Date.now(),
-    };
-    state.smartbandLogs = state.smartbandLogs || [];
-    const index = state.smartbandLogs.findIndex(log=>log.date === date);
-    if(index >= 0) state.smartbandLogs[index] = Object.assign({}, state.smartbandLogs[index], entry);
-    else state.smartbandLogs.push(entry);
-
-    if(entry.sleepHours > 0){
-      state.sleepLogs = state.sleepLogs || [];
-      const existingSleep = state.sleepLogs.find(log=>log.date === date && log.source === 'Mi Band / Apple Saúde');
-      const sleepEntry = {
-        id: existingSleep?.id || cryptoId(),
-        date,
-        bedtime:'',
-        wakeTime:'',
-        durationHours:entry.sleepHours,
-        quality:existingSleep?.quality || 4,
-        energy:existingSleep?.energy || 4,
-        stress:existingSleep?.stress || 2,
-        notes:existingSleep?.notes || 'Importado da Mi Band / Apple Saúde.',
-        source:'Mi Band / Apple Saúde',
-      };
-      const sleepIndex = state.sleepLogs.findIndex(log=>log.id === sleepEntry.id);
-      if(sleepIndex >= 0) state.sleepLogs[sleepIndex] = sleepEntry;
-      else state.sleepLogs.push(sleepEntry);
-    }
-
-    persist();
+    });
     showToast('Smartband salva', 'Os dados foram adicionados ao resumo do FitTrack.', '⌚');
     renderTabConfig();
   });
